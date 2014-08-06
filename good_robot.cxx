@@ -1,9 +1,47 @@
+/*
+Classes:
+    CommandStream: reads files or stdin and produces command lines
+    Interpreter: takes command lines and hands out Commands to interested
+        parties
+    Command: what to do
+    CommandListener: interface to interested party, implemented here by Robot
+    Constraint
+    ConstraintListener
+
+(perhaps CommandListener and ConstraintListener can have a common superclass
+Listener?)
+
+CommandStream + Interpreter read commands endlessly until EOF
+Sends each command to every registered command-listener
+Each command-listener (robot) responds to command appropriately, observing constraints
+Constraint requests are broadcast to constraint-listeners
+
+Set of commands map from each instruction (simple solution sets up hard-coded
+map; better would be to read from setup file so can e.g. do multiple
+languages)
+
+Considerations...
+
+Each command says what it would like to do: how best to encapsulate message
+between command and robot, how to direct response, how to design set-of-
+commands so that robot doesn't need to know what class of command it is, just
+what the command is requesting
+
+Different commands: class hierarchy? Could be best for extensibility but a bit
+overkill for simple example.
+
+Multiple robots need to avoid collisions. These and the table-edge are
+examples of constraints. Need a uniform interface which takes Proposal and
+returns verdict.
+*/
+
 #include <fstream>
 #include <iostream>
 #include <map>
 #include <set>
 #include <string>
 #include <sstream>
+#include <vector>
 
 using namespace std;
 
@@ -22,6 +60,27 @@ class CommandStream
 };
 
 //////////////////////////////////////////////////////////////////////////////
+// Abstract interface.
+
+class CommandListener
+{
+    public:
+        virtual void inform ( const string & command ) = 0;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class Robot : public CommandListener
+{
+    public:
+        Robot ( const char * name );
+        virtual void inform ( const string & command );
+        const char * name() { return m_name.c_str(); }
+    private:
+        string m_name;
+};
+
+//////////////////////////////////////////////////////////////////////////////
 
 class Interpreter
 {
@@ -31,8 +90,11 @@ class Interpreter
         // sequential command streams.
         void setCommandStream ( CommandStream & commandStream );
         void run();
+        void registerCommandListener ( CommandListener & commandListener );
     private:
+        void broadcast ( const string & command );
         CommandStream & m_commandStream;
+        vector< CommandListener* > m_commandListeners;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -41,13 +103,20 @@ extern int main ( int argc, char ** argv )
 {
     try
     {
+        Robot robot1 ( "Robbie" );
+        Robot robot2 ( "Arthur" );
+
         // Read from supplied files or else stdin.
         if ( argc > 1 )
         {
             // Awkward first attempt at handling straddling multiple input
-            // files. This is really ugly.
+            // files. This is really ugly. And pointless for now because an
+            // Interpreter *has* no state to retain.
+
             CommandStream commandStream ( argv[1] );
             Interpreter interpreter ( commandStream );
+            interpreter.registerCommandListener ( robot1 );
+            interpreter.registerCommandListener ( robot2 );
             interpreter.run();
             for ( int inx = 2; inx < argc; ++inx )
             {
@@ -60,6 +129,8 @@ extern int main ( int argc, char ** argv )
         {
             CommandStream commandStream ( stdin );
             Interpreter interpreter ( commandStream );
+            interpreter.registerCommandListener ( robot1 );
+            interpreter.registerCommandListener ( robot2 );
             interpreter.run();
         }
     }
@@ -125,8 +196,9 @@ bool CommandStream::getCommand ( string & command ) const
         line = buffer;
 
         // Got a line? Trim it.
-        // A better way would be to use an iterator with a function... need to go
-        // back and look at the STL API again.
+        // A better way would be to use an iterator with a function to
+        // encapsulate isspace or whatever... need to go back and look at the
+        // STL API again.
         size_t first = line.find_first_not_of ( " \t\n");
         size_t last = line.find_last_not_of ( " \t\n");
         // "abc": first = 0, last = 2
@@ -159,7 +231,36 @@ void Interpreter::run()
     string command;
     while ( m_commandStream.getCommand ( command ) )
     {
-        cerr << "Got command \"" << command << "\"" << endl;
+        broadcast ( command );
     }
-    cerr << "EOF"<< endl;
+}
+
+// For completeness, ought to have remove as well.
+void Interpreter::registerCommandListener
+(   CommandListener & commandListener
+)
+{
+    m_commandListeners.push_back ( &commandListener );
+}
+
+// Better as a Command object argument?
+void Interpreter::broadcast ( const string & command )
+{
+    for ( std::vector< CommandListener* >::iterator iter = m_commandListeners.begin();
+          iter != m_commandListeners.end(); ++iter )
+    {
+        (*iter)->inform ( command );
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+Robot::Robot ( const char * name )
+ : m_name ( name )
+{
+}
+
+void Robot::inform ( const string & command )
+{
+    cout << "Robot " << m_name << " has been told: " << command << endl;
 }
