@@ -7,25 +7,29 @@ Proposal
 --------
 
 Classes:
-    Reader
-    Command
-    CommandListener
-    Constraint
-    ConstraintListener
+  - Reader
+  - Command
+  - CommandListener
+  - Constraint
+  - ConstraintListener
 
 (perhaps CommandListener and ConstraintListener can have a common superclass
 Listener?)
 
 Reader reads command endlessly until EOF
+
 Sends each command to every registered command-listener
+
 Each command-listener (robot) responds to command appropriately, observing constraints
+
 Constraint requests are broadcast to constraint-listeners
 
 Set of commands map from each instruction (simple solution sets up hard-coded
 map; better would be to read from setup file so can e.g. do multiple
 languages)
 
-Considerations...
+Considerations
+--------------
 
 Each command says what it would like to do: how best to encapsulate message
 between command and robot, how to direct response, how to design set-of-
