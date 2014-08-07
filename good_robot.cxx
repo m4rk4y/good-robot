@@ -68,7 +68,8 @@ class CommandStream
 };
 
 //////////////////////////////////////////////////////////////////////////////
-// Capacity to invent new commands on the fly is limited.
+// Capacity to invent new commands on the fly is limited. For example this
+// class has no ability to direct attention to a specific robot or robots.
 
 class Command
 {
@@ -77,17 +78,20 @@ class Command
         int xpos() const;
         int ypos() const;
         Direction direction() const;
+        string objectName() const;
     private:
         Command
         (   const char * name,
             int xpos = 0,
             int ypos = 0,
-            Direction direction = Invalid
+            Direction direction = Invalid,
+            const char * objectName = 0
         );
         string m_name;
         int m_xpos;
         int m_ypos;
         Direction m_direction;
+        string m_objectName;
     friend class CommandFactory;
 };
 
@@ -96,7 +100,10 @@ class Command
 class CommandFactory
 {
     public:
-        static Command * createCommand ( const string & commandString );
+        static CommandFactory * instance();
+        Command * createCommand ( const string & commandString ) const;
+    private:
+        static CommandFactory * m_factory;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -113,7 +120,6 @@ class CommandListener
 class Robot : public CommandListener
 {
     public:
-        Robot ( const char * name );
         virtual void inform ( const Command & command );
         string name();
         void place ( int xpos, int ypos, Direction direction );
@@ -122,11 +128,26 @@ class Robot : public CommandListener
         void right();
         void report();
     private:
+        Robot ( const char * name );
         string m_name;
         int m_xpos;
         int m_ypos;
         Direction m_direction;
         bool m_onTable;
+    friend class RobotFactory;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class RobotFactory
+{
+    public:
+        static RobotFactory * instance();
+        Robot * createRobot ( const char * robotName );
+        const set< Robot* > & robots() const;
+    private:
+        static RobotFactory * m_factory;
+        set< Robot* > m_robots;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -135,11 +156,16 @@ class Interpreter
 {
     public:
         Interpreter ( CommandStream & commandStream );
-        // This is so one interpreter can retain state across multiple
-        // sequential command streams.
+        // This is so one interpreter can retain state (its listeners) across
+        // multiple sequential command streams. But a better way might be to
+        // have a single intermediary between the interpreter and the
+        // listeners, so that multiple interpreters can send commands to a
+        // shared set of objects (in e.g. an MMO or for that matter that
+        // social-media-based game where many players took it in turns to
+        // co-operate in moving an object... what was it called?)
         void setCommandStream ( CommandStream & commandStream );
         void run();
-        void registerCommandListener ( CommandListener & commandListener );
+        void registerCommandListener ( CommandListener * commandListener );
     private:
         void broadcast ( const Command & command );
         CommandStream & m_commandStream;
@@ -152,10 +178,9 @@ extern int main ( int argc, char ** argv )
 {
     try
     {
-        // Should accept robot-creation commands as input. Will need to ensure
-        // correctly-scoped robots then.
-        Robot robot1 ( "Robbie" );
-        Robot robot2 ( "Arthur" );
+        // Also accepts robot-creation commands as input.
+        Robot * robot1 = RobotFactory::instance()->createRobot ( "Robbie" );
+        Robot * robot2 = RobotFactory::instance()->createRobot ( "Arthur" );
 
         // Read from supplied files or else stdin.
         if ( argc > 1 )
@@ -274,10 +299,11 @@ Command::Command
 (   const char * name,
     int xpos,
     int ypos,
-    Direction direction
+    Direction direction,
+    const char * objectName
 )
   : m_name ( name ), m_xpos ( xpos ), m_ypos ( ypos ),
-    m_direction ( direction )
+    m_direction ( direction ), m_objectName ( objectName )
 {
 }
 
@@ -301,25 +327,45 @@ Direction Command::direction() const
     return m_direction;
 }
 
+string Command::objectName() const
+{
+    return m_objectName;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 
-Command * CommandFactory::createCommand ( const string & commandString )
+CommandFactory * CommandFactory::instance()
 {
-    string lcCommandString;
-    // string.tolower by steam. Ugh.
-    for ( const char * chPtr = commandString.c_str(); *chPtr != '\0'; ++chPtr )
+    static CommandFactory * factory = 0;
+    if ( factory == 0 )
     {
-        lcCommandString.push_back ( tolower( *chPtr ) );
+        factory = new CommandFactory;
+    }
+    return factory;
+}
+
+Command * CommandFactory::createCommand ( const string & commandString ) const
+{
+    istringstream parser ( commandString );
+    string verb;
+    parser >> verb;
+    string lcVerb;
+    // string.tolower by steam. Ugh.
+    // Also this lower-cases the whole string but we just want the command,
+    // not the parameters.
+    for ( const char * chPtr = verb.c_str(); *chPtr != '\0'; ++chPtr )
+    {
+        lcVerb.push_back ( tolower( *chPtr ) );
     }
 
     int newXpos = 0;
     int newYpos = 0;
     Direction newDirection = Invalid;
+    string objectName ( "" );
 
     // Parse for extra arguments when appropriate.
-    if ( lcCommandString.substr ( 0, 6 ) == "place " )
+    if ( lcVerb == "place" )
     {
-        istringstream parser ( lcCommandString.substr ( 6 ) );
         string newDirectionToken;
         parser >> newXpos >> newYpos >> newDirectionToken;
         newDirection = directionFromString ( newDirectionToken );
@@ -327,11 +373,14 @@ Command * CommandFactory::createCommand ( const string & commandString )
         {
             throw "Invalid direction for PLACE";
         }
-        lcCommandString = "place";
+    }
+    else if ( lcVerb == "create" )
+    {
+        parser >> objectName;
     }
 
-    return new Command ( lcCommandString.c_str(), newXpos, newYpos,
-                         newDirection );
+    return new Command ( lcVerb.c_str(),
+                         newXpos, newYpos, newDirection, objectName.c_str() );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -353,13 +402,25 @@ void Interpreter::run()
     {
         try
         {
-            Command * command = CommandFactory::createCommand ( commandString );
+            Command * command =
+                CommandFactory::instance()->createCommand ( commandString );
             scoped_ptr<Command> freeCommand ( command );
-            if ( command->name() == "quit" )
+            // Now this switching is ugly...
+            if ( command->name() == "create" )
+            {
+                // ... and so is this: shouldn't the *robot* decide whether it
+                // wants to listen?
+                registerCommandListener (
+                    RobotFactory::instance()->createRobot ( command->objectName().c_str() ) );
+            }
+            else if ( command->name() == "quit" )
             {
                 return;
             }
-            broadcast ( *command );
+            else
+            {
+                broadcast ( *command );
+            }
         }
         catch ( ... )   // should invent specific exception
         {
@@ -370,10 +431,10 @@ void Interpreter::run()
 
 // For completeness, ought to have remove as well.
 void Interpreter::registerCommandListener
-(   CommandListener & commandListener
+(   CommandListener * commandListener
 )
 {
-    m_commandListeners.push_back ( &commandListener );
+    m_commandListeners.push_back ( commandListener );
 }
 
 void Interpreter::broadcast ( const Command & command )
@@ -383,6 +444,30 @@ void Interpreter::broadcast ( const Command & command )
     {
         (*iter)->inform ( command );
     }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+RobotFactory * RobotFactory::instance()
+{
+    static RobotFactory * factory = 0;
+    if ( factory == 0 )
+    {
+        factory = new RobotFactory;
+    }
+    return factory;
+}
+
+Robot * RobotFactory::createRobot ( const char * robotName )
+{
+    Robot * robot = new Robot ( robotName );
+    m_robots.insert ( robot );
+    return robot;
+}
+
+const set< Robot* > & RobotFactory::robots() const
+{
+    return m_robots;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -572,7 +657,7 @@ void Robot::report()
 
 static bool validDirection ( Direction direction )
 {
-    return direction == North || direction == West  ||
+    return direction == North || direction == West ||
            direction == South || direction == East;
 }
 
@@ -587,9 +672,15 @@ static string directionAsString ( Direction direction )
 
 static Direction directionFromString ( const string & str )
 {
-    return ( str == "n" || str == "north" ) ? North :
-           ( str == "w" || str == "west" )  ? West :
-           ( str == "s" || str == "south" ) ? South :
-           ( str == "e" || str == "east" )  ? East :
-                                              Invalid;
+    string lcString;
+    // string.tolower by steam. Ugh.
+    for ( const char * chPtr = str.c_str(); *chPtr != '\0'; ++chPtr )
+    {
+        lcString.push_back ( tolower( *chPtr ) );
+    }
+    return ( lcString == "n" || lcString == "north" ) ? North :
+           ( lcString == "w" || lcString == "west" )  ? West :
+           ( lcString == "s" || lcString == "south" ) ? South :
+           ( lcString == "e" || lcString == "east" )  ? East :
+                                                        Invalid;
 }
