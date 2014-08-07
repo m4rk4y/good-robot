@@ -1,20 +1,23 @@
 /*
 Classes:
-    CommandStream: reads files or stdin and produces command lines
-    Interpreter: takes command lines and hands out Commands to interested
-        parties
-    Command: what to do
-    CommandListener: interface to interested party, implemented here by Robot
-    Constraint
+    CommandStream: reads files or stdin until EOF and produces command lines
+    Command: what a command line gets turned into
+    CommandFactory: constructs Commands
+    CommandListener: interface for objects which wish to be notified of
+                     commands
+    Robot : implementation of CommandListener, which responds to Commands
+            while observing Constraints
+    RobotFactory: constructs Robots
+    Broadcaster: broadcasts Commands to CommandListeners
+    Interpreter: main controlling object which
+                   - uses CommandStream to read lines
+                   - creates Commands
+                   - tells Broadcaster to broadcast the Commands
+    Constraint: checks proposed moves etc
+
+    ...
     ConstraintListener
-
-(perhaps CommandListener and ConstraintListener can have a common superclass
-Listener?)
-
-CommandStream + Interpreter read commands endlessly until EOF
-Sends each command to every registered command-listener
-Each command-listener (robot) responds to command appropriately, observing constraints
-Constraint requests are broadcast to constraint-listeners
+    ConstraintFactory
 
 Set of commands map from each instruction (simple solution sets up hard-coded
 map; better would be to read from setup file so can e.g. do multiple
@@ -81,8 +84,7 @@ class CommandListener
 };
 
 //////////////////////////////////////////////////////////////////////////////
-// Capacity to invent new commands on the fly is limited. For example this
-// class has no ability to direct attention to a specific robot or robots.
+// Capacity to invent new commands on the fly is limited.
 
 class Command
 {
@@ -132,6 +134,11 @@ class Robot : public CommandListener
         void left();
         void right();
         void report();
+        void remove();
+        int xpos();
+        int ypos();
+        Direction direction();
+        bool onTable();
         static Robot * find ( const string & robotName );
 
     private:
@@ -162,14 +169,6 @@ class Interpreter
 {
     public:
         Interpreter ( CommandStream & commandStream );
-        // This is so one interpreter can retain state (its listeners) across
-        // multiple sequential command streams. But a better way might be to
-        // have a single intermediary between the interpreter and the
-        // listeners, so that multiple interpreters can send commands to a
-        // shared set of objects (in e.g. an MMO or for that matter that
-        // social-media-based game where many players took it in turns to
-        // co-operate in moving an object... what was it called?)
-        void setCommandStream ( CommandStream & commandStream );
         void run();
     private:
         CommandStream & m_commandStream;
@@ -192,6 +191,19 @@ class Broadcaster
 
 //////////////////////////////////////////////////////////////////////////////
 
+class Constraint
+{
+    public:
+        static bool acceptable
+        (   Robot * robot,  // what about other Listeners?
+            int xpos,
+            int ypos,
+            Direction direction
+        );
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
 extern int main ( int argc, char ** argv )
 {
     try
@@ -200,25 +212,20 @@ extern int main ( int argc, char ** argv )
         Robot * robot1 = RobotFactory::singleton()->createRobot ( "Robbie" );
         Robot * robot2 = RobotFactory::singleton()->createRobot ( "Arthur" );
 
+        Broadcaster::singleton()->registerCommandListener ( robot1 );
+        Broadcaster::singleton()->registerCommandListener ( robot2 );
+
+        // Note that for now registerCommandListener stores *pointers* to the
+        // listeners, so we need to be sure they don't go out of scope while
+        // we're using them.
+
         // Read from supplied files or else stdin.
         if ( argc > 1 )
         {
-            // Awkward first attempt at handling straddling multiple input
-            // files. This is really ugly.
-
-            // Note also that for now registerCommandListener stores
-            // *pointers* to the listeners, so we need to be sure they don't
-            // go out of scope while we're using them.
-
-            CommandStream commandStream ( argv[1] );
-            Interpreter interpreter ( commandStream );
-            Broadcaster::singleton()->registerCommandListener ( robot1 );
-            Broadcaster::singleton()->registerCommandListener ( robot2 );
-            interpreter.run();
-            for ( int inx = 2; inx < argc; ++inx )
+            for ( int inx = 1; inx < argc; ++inx )
             {
                 CommandStream commandStream ( argv[inx] );
-                interpreter.setCommandStream ( commandStream );
+                Interpreter interpreter ( commandStream );
                 interpreter.run();
             }
         }
@@ -226,8 +233,6 @@ extern int main ( int argc, char ** argv )
         {
             CommandStream commandStream ( stdin );
             Interpreter interpreter ( commandStream );
-            Broadcaster::singleton()->registerCommandListener ( robot1 );
-            Broadcaster::singleton()->registerCommandListener ( robot2 );
             interpreter.run();
         }
     }
@@ -296,6 +301,8 @@ bool CommandStream::getCommand ( string & command ) const
         // A better way would be to use an iterator with a function to
         // encapsulate isspace or whatever... need to go back and look at the
         // STL API again.
+        // Also this may not be necessray as we later use istringstream to
+        // parse it.
         size_t first = line.find_first_not_of ( " \t\n");
         size_t last = line.find_last_not_of ( " \t\n");
         // "abc": first = 0, last = 2
@@ -371,14 +378,14 @@ CommandFactory * CommandFactory::singleton()
 
 Command * CommandFactory::createCommand ( const string & commandString ) const
 {
+    // Shame this only splits on whitespace; we would like to split on ":"
+    // too.
     istringstream parser ( commandString );
     string verb;
     parser >> verb;
 
     // First see if this is "<known-robot-name>:".
     // The manipulation here is easier in C++11.
-    // This is bit hokey... we're creating a command here which may or may not
-    // be associated with a specific robot.
     Robot * knownRobot = 0;
     if ( verb[verb.length()-1] == ':' )
     {
@@ -432,11 +439,6 @@ Interpreter::Interpreter ( CommandStream & commandStream )
 {
 }
 
-void Interpreter::setCommandStream ( CommandStream & commandStream )
-{
-    m_commandStream = commandStream;
-}
-
 void Interpreter::run()
 {
     string commandString;
@@ -451,7 +453,9 @@ void Interpreter::run()
             if ( command->name() == "create" )
             {
                 // ... and so is this: shouldn't the *robot* decide whether it
-                // wants to listen?
+                // wants to listen? That would allow some consistency with
+                // potential non-listening robots (fixed ones which can act as
+                // constraints).
                 Broadcaster::singleton()->registerCommandListener (
                     RobotFactory::singleton()->createRobot ( command->objectName().c_str() ) );
             }
@@ -557,8 +561,11 @@ string Robot::name()
 
 void Robot::inform ( const Command & command )
 {
-    string commandName ( command.name() );
-    // Hmmm... could have a map of command-name-to-method...
+    const string & commandName ( command.name() );
+
+    // Hmmm... could have a map of command-name-to-method... although only if
+    // all the relevant methods have the same signature. This would be so much
+    // easier in Ruby, as I could just use send().
     if ( commandName == "place" )
     {
         place ( command.xpos(), command.ypos(), command.direction() );
@@ -579,7 +586,14 @@ void Robot::inform ( const Command & command )
     {
         report();
     }
-    // ... else other cases?
+    else if ( commandName == "remove" )
+    {
+        remove();
+    }
+    else
+    {
+        cerr << "Invalid command " << commandName << endl;
+    }
 }
 
 // Return named robot or 0.
@@ -594,8 +608,7 @@ Robot * Robot::find ( const string & robotName )
 
 void Robot::place ( int xpos, int ypos, Direction direction )
 {
-    // Need to ask about Constraints here.
-    if ( xpos >= 0 && xpos < 5 && ypos >= 0 && ypos < 5 && validDirection ( direction ) )
+    if ( Constraint::acceptable ( this, xpos, ypos, direction ) )
     {
         m_xpos = xpos;
         m_ypos = ypos;
@@ -604,7 +617,7 @@ void Robot::place ( int xpos, int ypos, Direction direction )
     }
     else
     {
-        cerr << "Ignoring invalid PLACE co-ordinates" << endl;
+        cout << "Ignoring invalid PLACE co-ordinates" << endl;
     }
 }
 
@@ -616,56 +629,29 @@ void Robot::move()
         return;
     }
 
-    // Need to ask about Constraints here.
-    bool validMove = true;
+    int newXpos = m_xpos;
+    int newYpos = m_ypos;
+
     switch ( m_direction )
     {
         case North:
         {
-            if ( m_ypos < 4 )
-            {
-                ++m_ypos;
-            }
-            else
-            {
-                validMove = false;
-            }
+            ++newYpos;
             break;
         }
         case West:
         {
-            if ( m_xpos > 0 )
-            {
-                --m_xpos;
-            }
-            else
-            {
-                validMove = false;
-            }
+            --newXpos;
             break;
         }
         case South:
         {
-            if ( m_ypos > 0 )
-            {
-                --m_ypos;
-            }
-            else
-            {
-                validMove = false;
-            }
+            --newYpos;
             break;
         }
         case East:
         {
-            if ( m_xpos < 4 )
-            {
-                ++m_xpos;
-            }
-            else
-            {
-                validMove = false;
-            }
+            ++newXpos;
             break;
         }
         case Invalid:
@@ -679,9 +665,15 @@ void Robot::move()
             break;
         }
     }
-    if ( ! validMove )
+
+    if ( Constraint::acceptable ( this, newXpos, newYpos, m_direction ) )
     {
-        cout << "Ignoring attempt to move robot " << m_name << " off table" << endl;
+        m_xpos = newXpos;
+        m_ypos = newYpos;
+    }
+    else
+    {
+        cout << "Ignoring attempt to move robot " << m_name << " to invalid position" << endl;
     }
 }
 
@@ -727,6 +719,74 @@ void Robot::report()
     {
         cout << "Robot " << m_name << " is not on the table" << endl;
     }
+}
+
+void Robot::remove()
+{
+    m_onTable = false;
+    m_direction = Invalid;  // for good measure
+}
+
+int Robot::xpos()
+{
+    return m_xpos;
+}
+
+int Robot::ypos()
+{
+    return m_ypos;
+}
+
+Direction Robot::direction()
+{
+    return m_direction;
+}
+
+bool Robot::onTable()
+{
+    return m_onTable;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+bool Constraint::acceptable
+(   Robot * robot,  // what about other Listeners?
+    int xpos,
+    int ypos,
+    Direction direction
+)
+{
+    // Check against table edges.
+    if ( xpos < 0 || xpos > 4 || ypos < 0 || ypos > 4 )
+    {
+        return false;
+    }
+
+    // Check sane direction.
+    if ( ! validDirection ( direction ) )
+    {
+        return false;
+    }
+
+    // Check for collision with other robots.
+    const map< string, Robot* > & robots = RobotFactory::singleton()->robots();
+    for ( map< string, Robot* >::const_iterator iter = robots.begin();
+          iter != robots.end(); ++iter
+        )
+    {
+        Robot * otherRobot = iter->second;
+        if ( otherRobot != robot &&         // different robot
+             otherRobot->onTable() &&       // } on table and
+             otherRobot->xpos() == xpos &&  // } already in
+             otherRobot->ypos() == ypos     // } proposed position
+           )
+        {
+            return false;
+        }
+    }
+
+    // Looks good, then.
+    return true;
 }
 
 //////////////////////////////////////////////////////////////////////////////
