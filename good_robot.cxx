@@ -45,8 +45,8 @@ returns verdict.
 
 using namespace std;
 
-// #include "scoped_ptr.hxx"
-// using namespace scoping;
+#include "my_scoped_ptr.hxx"
+using namespace scoping;
 
 enum Direction { Invalid, North, East, South, West };
 static bool validDirection ( Direction direction );
@@ -354,14 +354,12 @@ void Interpreter::run()
         try
         {
             Command * command = CommandFactory::createCommand ( commandString );
-            // scoped_ptr<Command> freeCommand ( command );
+            scoped_ptr<Command> freeCommand ( command );
             if ( command->name() == "quit" )
             {
-                delete command; // until we implement scoping
                 return;
             }
             broadcast ( *command );
-            delete command; // until we implement scoping
         }
         catch ( ... )   // should invent specific exception
         {
