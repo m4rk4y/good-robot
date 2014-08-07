@@ -45,6 +45,14 @@ returns verdict.
 
 using namespace std;
 
+// #include "scoped_ptr.hxx"
+// using namespace scoping;
+
+enum Direction { Invalid, North, East, South, West };
+static bool validDirection ( Direction direction );
+static string directionAsString ( Direction direction );
+static Direction directionFromString ( const string & str );
+
 //////////////////////////////////////////////////////////////////////////////
 
 class CommandStream
@@ -60,12 +68,44 @@ class CommandStream
 };
 
 //////////////////////////////////////////////////////////////////////////////
+// Capacity to invent new commands on the fly is limited.
+
+class Command
+{
+    public:
+        string name() const;
+        int xpos() const;
+        int ypos() const;
+        Direction direction() const;
+    private:
+        Command
+        (   const char * name,
+            int xpos = 0,
+            int ypos = 0,
+            Direction direction = Invalid
+        );
+        string m_name;
+        int m_xpos;
+        int m_ypos;
+        Direction m_direction;
+    friend class CommandFactory;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class CommandFactory
+{
+    public:
+        static Command * createCommand ( const string & commandString );
+};
+
+//////////////////////////////////////////////////////////////////////////////
 // Abstract interface.
 
 class CommandListener
 {
     public:
-        virtual void inform ( const string & command ) = 0;
+        virtual void inform ( const Command & command ) = 0;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -74,10 +114,19 @@ class Robot : public CommandListener
 {
     public:
         Robot ( const char * name );
-        virtual void inform ( const string & command );
-        const char * name() { return m_name.c_str(); }
+        virtual void inform ( const Command & command );
+        string name();
+        void place ( int xpos, int ypos, Direction direction );
+        void move();
+        void left();
+        void right();
+        void report();
     private:
         string m_name;
+        int m_xpos;
+        int m_ypos;
+        Direction m_direction;
+        bool m_onTable;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -92,7 +141,7 @@ class Interpreter
         void run();
         void registerCommandListener ( CommandListener & commandListener );
     private:
-        void broadcast ( const string & command );
+        void broadcast ( const Command & command );
         CommandStream & m_commandStream;
         vector< CommandListener* > m_commandListeners;
 };
@@ -103,6 +152,8 @@ extern int main ( int argc, char ** argv )
 {
     try
     {
+        // Should accept robot-creation commands as input. Will need to ensure
+        // correctly-scoped robots then.
         Robot robot1 ( "Robbie" );
         Robot robot2 ( "Arthur" );
 
@@ -110,8 +161,11 @@ extern int main ( int argc, char ** argv )
         if ( argc > 1 )
         {
             // Awkward first attempt at handling straddling multiple input
-            // files. This is really ugly. And pointless for now because an
-            // Interpreter *has* no state to retain.
+            // files. This is really ugly.
+
+            // Note also that for now registerCommandListener stores
+            // *pointers* to the listeners, so we need to be sure they don't
+            // go out of scope while we're using them.
 
             CommandStream commandStream ( argv[1] );
             Interpreter interpreter ( commandStream );
@@ -216,6 +270,72 @@ bool CommandStream::getCommand ( string & command ) const
 
 //////////////////////////////////////////////////////////////////////////////
 
+Command::Command
+(   const char * name,
+    int xpos,
+    int ypos,
+    Direction direction
+)
+  : m_name ( name ), m_xpos ( xpos ), m_ypos ( ypos ),
+    m_direction ( direction )
+{
+}
+
+string Command::name() const
+{
+    return m_name;
+}
+
+int Command::xpos() const
+{
+    return m_xpos;
+}
+
+int Command::ypos() const
+{
+    return m_ypos;
+}
+
+Direction Command::direction() const
+{
+    return m_direction;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+Command * CommandFactory::createCommand ( const string & commandString )
+{
+    string lcCommandString;
+    // string.tolower by steam. Ugh.
+    for ( const char * chPtr = commandString.c_str(); *chPtr != '\0'; ++chPtr )
+    {
+        lcCommandString.push_back ( tolower( *chPtr ) );
+    }
+
+    int newXpos = 0;
+    int newYpos = 0;
+    Direction newDirection = Invalid;
+
+    // Parse for extra arguments when appropriate.
+    if ( lcCommandString.substr ( 0, 6 ) == "place " )
+    {
+        istringstream parser ( lcCommandString.substr ( 6 ) );
+        string newDirectionToken;
+        parser >> newXpos >> newYpos >> newDirectionToken;
+        newDirection = directionFromString ( newDirectionToken );
+        if ( newDirection == Invalid )
+        {
+            throw "Invalid direction for PLACE";
+        }
+        lcCommandString = "place";
+    }
+
+    return new Command ( lcCommandString.c_str(), newXpos, newYpos,
+                         newDirection );
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
 Interpreter::Interpreter ( CommandStream & commandStream )
   : m_commandStream ( commandStream )
 {
@@ -228,10 +348,25 @@ void Interpreter::setCommandStream ( CommandStream & commandStream )
 
 void Interpreter::run()
 {
-    string command;
-    while ( m_commandStream.getCommand ( command ) )
+    string commandString;
+    while ( m_commandStream.getCommand ( commandString ) )
     {
-        broadcast ( command );
+        try
+        {
+            Command * command = CommandFactory::createCommand ( commandString );
+            // scoped_ptr<Command> freeCommand ( command );
+            if ( command->name() == "quit" )
+            {
+                delete command; // until we implement scoping
+                return;
+            }
+            broadcast ( *command );
+            delete command; // until we implement scoping
+        }
+        catch ( ... )   // should invent specific exception
+        {
+            cerr << "Failed to create or run command \"" << commandString << "\"" << endl;
+        }
     }
 }
 
@@ -243,8 +378,7 @@ void Interpreter::registerCommandListener
     m_commandListeners.push_back ( &commandListener );
 }
 
-// Better as a Command object argument?
-void Interpreter::broadcast ( const string & command )
+void Interpreter::broadcast ( const Command & command )
 {
     for ( std::vector< CommandListener* >::iterator iter = m_commandListeners.begin();
           iter != m_commandListeners.end(); ++iter )
@@ -256,11 +390,208 @@ void Interpreter::broadcast ( const string & command )
 //////////////////////////////////////////////////////////////////////////////
 
 Robot::Robot ( const char * name )
- : m_name ( name )
+ : m_name ( name ),
+   m_xpos ( 0 ),            // }
+   m_ypos ( 0 ),            // } but irrelevant since not on table
+   m_direction ( Invalid ), // }
+   m_onTable ( false )
 {
 }
 
-void Robot::inform ( const string & command )
+string Robot::name()
 {
-    cout << "Robot " << m_name << " has been told: " << command << endl;
+    return m_name;
+}
+
+void Robot::inform ( const Command & command )
+{
+    string commandName ( command.name() );
+    // Hmmm... could have a map of command-name-to-method...
+    if ( commandName == "place" )
+    {
+        place ( command.xpos(), command.ypos(), command.direction() );
+    }
+    else if ( commandName == "move" )
+    {
+        move();
+    }
+    else if ( commandName == "left" )
+    {
+        left();
+    }
+    else if ( commandName == "right" )
+    {
+        right();
+    }
+    else if ( commandName == "report" )
+    {
+        report();
+    }
+    // ... else other cases?
+}
+
+// How best to report failures etc?
+
+void Robot::place ( int xpos, int ypos, Direction direction )
+{
+    // Need to ask about Constraints here.
+    if ( xpos >= 0 && xpos < 5 && ypos >= 0 && ypos < 5 && validDirection ( direction ) )
+    {
+        m_xpos = xpos;
+        m_ypos = ypos;
+        m_direction = direction;
+        m_onTable = true;
+    }
+    else
+    {
+        cerr << "Ignoring invalid PLACE co-ordinates" << endl;
+    }
+}
+
+void Robot::move()
+{
+    if ( ! m_onTable )
+    {
+        cout << "Robot " << m_name << " is not on the table" << endl;
+        return;
+    }
+
+    // Need to ask about Constraints here.
+    bool validMove = true;
+    switch ( m_direction )
+    {
+        case North:
+        {
+            if ( m_ypos < 4 )
+            {
+                ++m_ypos;
+            }
+            else
+            {
+                validMove = false;
+            }
+            break;
+        }
+        case West:
+        {
+            if ( m_xpos > 0 )
+            {
+                --m_xpos;
+            }
+            else
+            {
+                validMove = false;
+            }
+            break;
+        }
+        case South:
+        {
+            if ( m_ypos > 0 )
+            {
+                --m_ypos;
+            }
+            else
+            {
+                validMove = false;
+            }
+            break;
+        }
+        case East:
+        {
+            if ( m_xpos < 4 )
+            {
+                ++m_xpos;
+            }
+            else
+            {
+                validMove = false;
+            }
+            break;
+        }
+        case Invalid:
+        {
+            cout << "Attempt to move robot " << m_name << " without placing it first" << endl;
+            break;
+        }
+        default:    // impossible, it's an enum
+        {
+            throw "impossible enum value";
+            break;
+        }
+    }
+    if ( ! validMove )
+    {
+        cout << "Ignoring attempt to move robot " << m_name << " off table" << endl;
+    }
+}
+
+void Robot::left()
+{
+    if ( ! m_onTable )
+    {
+        cout << "Robot " << m_name << " is not on the table" << endl;
+        return;
+    }
+
+    m_direction = ( m_direction == North ) ? West :
+                  ( m_direction == West )  ? South :
+                  ( m_direction == South ) ? East :
+                  ( m_direction == East )  ? North :
+                                             Invalid;
+}
+
+void Robot::right()
+{
+    if ( ! m_onTable )
+    {
+        cout << "Robot " << m_name << " is not on the table" << endl;
+        return;
+    }
+
+    m_direction = ( m_direction == North ) ? East :
+                  ( m_direction == East )  ? South :
+                  ( m_direction == South ) ? West :
+                  ( m_direction == West )  ? North :
+                                             Invalid;
+}
+
+void Robot::report()
+{
+    if ( m_onTable )
+    {
+        cout << "Robot " << m_name << " is at x = " << m_xpos
+             << ", y = " << m_ypos
+             << ", facing " << directionAsString(m_direction) << endl;
+    }
+    else
+    {
+        cout << "Robot " << m_name << " is not on the table" << endl;
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Direction utilities.
+
+static bool validDirection ( Direction direction )
+{
+    return direction == North || direction == West  ||
+           direction == South || direction == East;
+}
+
+static string directionAsString ( Direction direction )
+{
+    return ( direction == North ) ? "North" :
+           ( direction == West )  ? "West" :
+           ( direction == South ) ? "South" :
+           ( direction == East )  ? "East" :
+                                    "Invalid";
+}
+
+static Direction directionFromString ( const string & str )
+{
+    return ( str == "n" || str == "north" ) ? North :
+           ( str == "w" || str == "west" )  ? West :
+           ( str == "s" || str == "south" ) ? South :
+           ( str == "e" || str == "east" )  ? East :
+                                              Invalid;
 }
