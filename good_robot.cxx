@@ -68,6 +68,19 @@ class CommandStream
 };
 
 //////////////////////////////////////////////////////////////////////////////
+
+class Command;  // forward declaration for CommandListener
+
+//////////////////////////////////////////////////////////////////////////////
+// Abstract interface.
+
+class CommandListener
+{
+    public:
+        virtual void inform ( const Command & command ) = 0;
+};
+
+//////////////////////////////////////////////////////////////////////////////
 // Capacity to invent new commands on the fly is limited. For example this
 // class has no ability to direct attention to a specific robot or robots.
 
@@ -79,19 +92,22 @@ class Command
         int ypos() const;
         Direction direction() const;
         string objectName() const;
+        CommandListener * commandListener() const;
     private:
         Command
         (   const char * name,
             int xpos = 0,
             int ypos = 0,
             Direction direction = Invalid,
-            const char * objectName = 0
+            const char * objectName = 0,
+            CommandListener * commandListener = 0
         );
         string m_name;
         int m_xpos;
         int m_ypos;
         Direction m_direction;
         string m_objectName;
+        CommandListener * m_commandListener;
     friend class CommandFactory;
 };
 
@@ -100,19 +116,8 @@ class Command
 class CommandFactory
 {
     public:
-        static CommandFactory * instance();
+        static CommandFactory * singleton();
         Command * createCommand ( const string & commandString ) const;
-    private:
-        static CommandFactory * m_factory;
-};
-
-//////////////////////////////////////////////////////////////////////////////
-// Abstract interface.
-
-class CommandListener
-{
-    public:
-        virtual void inform ( const Command & command ) = 0;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -127,6 +132,8 @@ class Robot : public CommandListener
         void left();
         void right();
         void report();
+        static Robot * find ( const string & robotName );
+
     private:
         Robot ( const char * name );
         string m_name;
@@ -142,12 +149,11 @@ class Robot : public CommandListener
 class RobotFactory
 {
     public:
-        static RobotFactory * instance();
+        static RobotFactory * singleton();
         Robot * createRobot ( const char * robotName );
-        const set< Robot* > & robots() const;
+        const map< string, Robot* > & robots() const;
     private:
-        static RobotFactory * m_factory;
-        set< Robot* > m_robots;
+        map< string, Robot* > m_robots;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -165,10 +171,22 @@ class Interpreter
         // co-operate in moving an object... what was it called?)
         void setCommandStream ( CommandStream & commandStream );
         void run();
-        void registerCommandListener ( CommandListener * commandListener );
     private:
-        void broadcast ( const Command & command );
         CommandStream & m_commandStream;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+// Interpreter(s) submit(s) stuff on to singleton Broadcaster which broadcasts
+// to all Listeners. That's not going to scale well for enormous games, is it?
+
+class Broadcaster
+{
+    public:
+        static Broadcaster * singleton();
+        void registerCommandListener ( CommandListener * commandListener );
+        void broadcast ( const Command & command );
+    private:
+        static Broadcaster * m_broadcaster;
         vector< CommandListener* > m_commandListeners;
 };
 
@@ -179,8 +197,8 @@ extern int main ( int argc, char ** argv )
     try
     {
         // Also accepts robot-creation commands as input.
-        Robot * robot1 = RobotFactory::instance()->createRobot ( "Robbie" );
-        Robot * robot2 = RobotFactory::instance()->createRobot ( "Arthur" );
+        Robot * robot1 = RobotFactory::singleton()->createRobot ( "Robbie" );
+        Robot * robot2 = RobotFactory::singleton()->createRobot ( "Arthur" );
 
         // Read from supplied files or else stdin.
         if ( argc > 1 )
@@ -194,8 +212,8 @@ extern int main ( int argc, char ** argv )
 
             CommandStream commandStream ( argv[1] );
             Interpreter interpreter ( commandStream );
-            interpreter.registerCommandListener ( robot1 );
-            interpreter.registerCommandListener ( robot2 );
+            Broadcaster::singleton()->registerCommandListener ( robot1 );
+            Broadcaster::singleton()->registerCommandListener ( robot2 );
             interpreter.run();
             for ( int inx = 2; inx < argc; ++inx )
             {
@@ -208,8 +226,8 @@ extern int main ( int argc, char ** argv )
         {
             CommandStream commandStream ( stdin );
             Interpreter interpreter ( commandStream );
-            interpreter.registerCommandListener ( robot1 );
-            interpreter.registerCommandListener ( robot2 );
+            Broadcaster::singleton()->registerCommandListener ( robot1 );
+            Broadcaster::singleton()->registerCommandListener ( robot2 );
             interpreter.run();
         }
     }
@@ -300,10 +318,12 @@ Command::Command
     int xpos,
     int ypos,
     Direction direction,
-    const char * objectName
+    const char * objectName,
+    CommandListener * commandListener
 )
   : m_name ( name ), m_xpos ( xpos ), m_ypos ( ypos ),
-    m_direction ( direction ), m_objectName ( objectName )
+    m_direction ( direction ), m_objectName ( objectName ),
+    m_commandListener ( commandListener )
 {
 }
 
@@ -332,9 +352,14 @@ string Command::objectName() const
     return m_objectName;
 }
 
+CommandListener * Command::commandListener() const
+{
+    return m_commandListener;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 
-CommandFactory * CommandFactory::instance()
+CommandFactory * CommandFactory::singleton()
 {
     static CommandFactory * factory = 0;
     if ( factory == 0 )
@@ -349,10 +374,26 @@ Command * CommandFactory::createCommand ( const string & commandString ) const
     istringstream parser ( commandString );
     string verb;
     parser >> verb;
+
+    // First see if this is "<known-robot-name>:".
+    // The manipulation here is easier in C++11.
+    // This is bit hokey... we're creating a command here which may or may not
+    // be associated with a specific robot.
+    Robot * knownRobot = 0;
+    if ( verb[verb.length()-1] == ':' )
+    {
+        knownRobot = Robot::find ( verb.substr(0,verb.length()-1) );
+        if ( knownRobot != 0 )
+        {
+            // Move on to actual verb.
+            parser >> verb;
+        }
+        // else verb ends with a colon which I imagine will fail later, but we
+        // certainly can't assert that here.
+    }
+
     string lcVerb;
     // string.tolower by steam. Ugh.
-    // Also this lower-cases the whole string but we just want the command,
-    // not the parameters.
     for ( const char * chPtr = verb.c_str(); *chPtr != '\0'; ++chPtr )
     {
         lcVerb.push_back ( tolower( *chPtr ) );
@@ -380,7 +421,8 @@ Command * CommandFactory::createCommand ( const string & commandString ) const
     }
 
     return new Command ( lcVerb.c_str(),
-                         newXpos, newYpos, newDirection, objectName.c_str() );
+                         newXpos, newYpos, newDirection, objectName.c_str(),
+                         knownRobot );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -403,15 +445,15 @@ void Interpreter::run()
         try
         {
             Command * command =
-                CommandFactory::instance()->createCommand ( commandString );
+                CommandFactory::singleton()->createCommand ( commandString );
             scoped_ptr<Command> freeCommand ( command );
             // Now this switching is ugly...
             if ( command->name() == "create" )
             {
                 // ... and so is this: shouldn't the *robot* decide whether it
                 // wants to listen?
-                registerCommandListener (
-                    RobotFactory::instance()->createRobot ( command->objectName().c_str() ) );
+                Broadcaster::singleton()->registerCommandListener (
+                    RobotFactory::singleton()->createRobot ( command->objectName().c_str() ) );
             }
             else if ( command->name() == "quit" )
             {
@@ -419,7 +461,7 @@ void Interpreter::run()
             }
             else
             {
-                broadcast ( *command );
+                Broadcaster::singleton()->broadcast ( *command );
             }
         }
         catch ( ... )   // should invent specific exception
@@ -429,26 +471,53 @@ void Interpreter::run()
     }
 }
 
+//////////////////////////////////////////////////////////////////////////////
+
+Broadcaster * Broadcaster::singleton()
+{
+    static Broadcaster * broadcaster = 0;
+    if ( broadcaster == 0 )
+    {
+        broadcaster = new Broadcaster;
+    }
+    return broadcaster;
+}
+
 // For completeness, ought to have remove as well.
-void Interpreter::registerCommandListener
+void Broadcaster::registerCommandListener
 (   CommandListener * commandListener
 )
 {
     m_commandListeners.push_back ( commandListener );
 }
 
-void Interpreter::broadcast ( const Command & command )
+void Broadcaster::broadcast ( const Command & command )
 {
+    CommandListener * commandListener = command.commandListener();
+#if 0
+    cerr << "Command: \"" << command.name() << "\""
+         << " " << command.xpos()
+         << " " << command.ypos()
+         << " " << directionAsString(command.direction())
+         << " \"" << command.objectName() << "\""
+         << " " << command.commandListener() << endl;
+#endif
     for ( std::vector< CommandListener* >::iterator iter = m_commandListeners.begin();
           iter != m_commandListeners.end(); ++iter )
     {
-        (*iter)->inform ( command );
+        // cerr << "Listener: " << (*iter) << endl;
+        // Broadcast to all listeners or just the one that the Command
+        // specifies.
+        if ( commandListener == 0 || commandListener == (*iter) )
+        {
+            (*iter)->inform ( command );
+        }
     }
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-RobotFactory * RobotFactory::instance()
+RobotFactory * RobotFactory::singleton()
 {
     static RobotFactory * factory = 0;
     if ( factory == 0 )
@@ -461,11 +530,11 @@ RobotFactory * RobotFactory::instance()
 Robot * RobotFactory::createRobot ( const char * robotName )
 {
     Robot * robot = new Robot ( robotName );
-    m_robots.insert ( robot );
+    m_robots.insert ( pair< string, Robot* > ( robotName, robot ) );
     return robot;
 }
 
-const set< Robot* > & RobotFactory::robots() const
+const map< string, Robot* > & RobotFactory::robots() const
 {
     return m_robots;
 }
@@ -511,6 +580,14 @@ void Robot::inform ( const Command & command )
         report();
     }
     // ... else other cases?
+}
+
+// Return named robot or 0.
+Robot * Robot::find ( const string & robotName )
+{
+    const map< string, Robot* > & robots = RobotFactory::singleton()->robots();
+    map< string, Robot* >::const_iterator iter = robots.find ( robotName );
+    return ( iter == robots.end() ) ? 0 : iter->second;
 }
 
 // How best to report failures etc?
