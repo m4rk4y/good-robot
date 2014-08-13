@@ -3,62 +3,97 @@ good-robot
 
 Better solution to "toy robot" coding exercise (still in C++ though)
 
-Proposal
+Synopsis
 --------
+Accepts commands (from stdin or named input files):
 
-Classes:
-  - Reader
-  - Command
-  - CommandListener
-  - Constraint
-  - ConstraintListener
+    table <xmin> <ymin> <xmax> <ymax>
+    create <new-robot-name>
+    [ <robot-name>: ] place
+    [ <robot-name>: ] move
+    [ <robot-name>: ] left
+    [ <robot-name>: ] right
+    [ <robot-name>: ] report
+    [ <robot-name>: ] remove
+    quit
+    help
 
-(perhaps CommandListener and ConstraintListener can have a common superclass
-Listener?)
+Commands are case-insensitive. Robot names are case-sensitive.
 
-Reader reads command endlessly until EOF
+Starts with a table at [ ( 0, 0 ), ( 10, 10 ) ] but "table" resizes this.
 
-Sends each command to every registered command-listener
+Starts with two robots called "Robbie" and "Arthur", not on the table.
 
-Each command-listener (robot) responds to command appropriately, observing constraints
+place/move/left/right/report/remove act on all robots or just the named one.
 
-Constraint requests are broadcast to constraint-listeners
+Robots cannot be moved past the table boundaries, nor onto an occupied position.
 
-Set of commands map from each instruction (simple solution sets up hard-coded
-map; better would be to read from setup file so can e.g. do multiple
-languages)
+The table can however be resized on the fly so that a Robot is outside its
+boundaries. Please don't do this :-)
 
-Considerations
---------------
+Flow
+----
+(1) main loop:
 
-Each command says what it would like to do: how best to encapsulate message
-between command and robot, how to direct response, how to design set-of-
-commands so that robot doesn't need to know what class of command it is, just
-what the command is requesting
+    while read-command
+        if help
+            help
+        elsif quit
+            quit
+        elsif create
+            create-robot
+                register-as-command-listener
+                register-as-constrainer
+        else
+            broadcast-command-to-all-listeners
+                listeners.each
+                    relay-command-to-listening-object
+        endif
+    endwhile
 
-Different commands: class hierarchy? Could be best for extensibility but a bit
-overkill for simple example.
+(2) command:
 
-Multiple robots need to avoid collisions. These and the table-edge are
-examples of constraints. Need a uniform interface which takes Proposal and
-returns verdict.
+    constrainers.each
+        check-this-proposal
+    if ok
+        do it
+    endif
 
-How to avoid inter-robot false positive? E.g. if robot1 is on (1,1) and wants
-to move to (2,1) while robot2 is on (2,1) and wants to move to (3,1), then if
-they are supposed to move simultaneously then this should be ok, but if we try
-to move robot1 first then it will fail. Depends on form of instructions: if
-each instruction is separate and tagged for a specific robot, then we can
-reasonably process them one at a time, but if say we extend to one instruction
-encapsulating multiple robot-moves then it's a harder problem.
+Classes
+-------
 
-Extensibility/pluggability concerns:
- - different driver e.g. commands come from some MMO game
- - 3D
- - more complicated edge constraints (edges could be rows of no-go positions? representable as motionless pseudo-robots i.e. non-command-listening constraint-generating objects)
- - more-than-one-square occupancy (that could tie in with the above edge objects)
+CommandStream: reads files or stdin until EOF and produces command lines
 
-Simple version:
-  - hard-code list of commands
-  - no command class hierarchy
-  - robots talk directly to one another in order to avoid collision
-  - hard-code edges of table
+Command: what a command line gets turned into
+
+CommandFactory: constructs Commands
+
+CommandListener: intermediary, constructed by GameObject in order to relay Commands to the GameObject
+
+GameObject: interface for objects which wish to be notified of commands and/or constraint-verdict requests
+
+Robot: implementation of GameObject, which responds to Commands while observing Constraints
+
+RobotFactory: constructs Robots
+
+Table: implementation of GameObject, which responds to (very few) Commands and provides a constraint-request verdict
+
+Interpreter: main controlling object which
+ - uses CommandStream to read lines
+ - creates Commands
+ - tells Broadcaster to broadcast the Commands
+
+Broadcaster: broadcasts Commands to CommandListeners
+
+Constraint: checks proposed moves etc; constructed by GameObject in order to relay constraint-verdict requests to the GameObject
+
+ConstraintFactory: constructs Constraints
+
+Various Exception classes.
+
+Extensibility/pluggability concerns
+-----------------------------------
+- different driver e.g. commands come from some MMO game
+- 3D
+- more complicated edge constraints (edges could be rows of no-go positions? representable as motionless pseudo-robots i.e. non-command-listening constraint-generating objects)
+- more-than-one-square occupancy (that could tie in with the above edge objects)
