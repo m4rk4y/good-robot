@@ -3,13 +3,18 @@ good-robot
 
 Better solution to "toy robot" coding exercise (still in C++ though)
 
+Testing
+-------
+
+run_tests (currently just a Windows script)
+
 Synopsis
 --------
 Accepts commands (from stdin or named input files):
 
     table <xmin> <ymin> <xmax> <ymax>
     create <new-robot-name>
-    [ <robot-name>: ] place
+    [ <robot-name>: ] place <x> <y> <direction>
     [ <robot-name>: ] move
     [ <robot-name>: ] left
     [ <robot-name>: ] right
@@ -20,6 +25,8 @@ Accepts commands (from stdin or named input files):
 
 Commands are case-insensitive. Robot names are case-sensitive.
 
+Arguments (for "table" and "place") can be comma- or space-delimited.
+
 Starts with a table at [ ( 0, 0 ), ( 10, 10 ) ] but "table" resizes this.
 
 Starts with two robots called "Robbie" and "Arthur", not on the table.
@@ -28,8 +35,9 @@ place/move/left/right/report/remove act on all robots or just the named one.
 
 Robots cannot be moved past the table boundaries, nor onto an occupied position.
 
-The table can however be resized on the fly so that a Robot is outside its
-boundaries. Please don't do this :-)
+The table can however be resized on the fly so that a Robot can suddenly find
+itself outside the boundaries. Please don't do this as it upsets the
+Robot's world view :-)
 
 Flow
 ----
@@ -88,6 +96,9 @@ Broadcaster: broadcasts Commands to CommandListeners
 Constraint: checks proposed moves etc; constructed by GameObject in order to relay constraint-verdict requests to the GameObject
 
 ConstraintFactory: constructs Constraints
+
+Tokeniser: DIY stand-in to handle comma and whitespace (because
+           istringstream parsing only handles whitespace)
 
 Various Exception classes.
 
