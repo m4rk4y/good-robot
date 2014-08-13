@@ -1,41 +1,37 @@
 /*
 Classes:
+
     CommandStream: reads files or stdin until EOF and produces command lines
+
     Command: what a command line gets turned into
+
     CommandFactory: constructs Commands
-    CommandListener: interface for objects which wish to be notified of
-                     commands
-    Robot : implementation of CommandListener, which responds to Commands
+
+    CommandListener: intermediary, constructed by GameObject in order to relay
+                     Commands to the GameObject
+
+    GameObject: interface for objects which wish to be notified of commands
+                and/or constraint-verdict requests
+
+    Robot: implementation of GameObject, which responds to Commands
             while observing Constraints
+
     RobotFactory: constructs Robots
+
+    Table: implementation of GameObject, which does not respond to Commands
+           but does provide a constraint-request verdict
+
     Broadcaster: broadcasts Commands to CommandListeners
+
     Interpreter: main controlling object which
                    - uses CommandStream to read lines
                    - creates Commands
                    - tells Broadcaster to broadcast the Commands
-    Constraint: checks proposed moves etc
 
-    ...
-    ConstraintListener
-    ConstraintFactory
+    Constraint: checks proposed moves etc; constructed by GameObject in order
+                to relay constraint-verdict requests to the GameObject
 
-Set of commands map from each instruction (simple solution sets up hard-coded
-map; better would be to read from setup file so can e.g. do multiple
-languages)
-
-Considerations...
-
-Each command says what it would like to do: how best to encapsulate message
-between command and robot, how to direct response, how to design set-of-
-commands so that robot doesn't need to know what class of command it is, just
-what the command is requesting
-
-Different commands: class hierarchy? Could be best for extensibility but a bit
-overkill for simple example.
-
-Multiple robots need to avoid collisions. These and the table-edge are
-examples of constraints. Need a uniform interface which takes Proposal and
-returns verdict.
+    ConstraintFactory: constructs Constraints
 */
 
 #include <fstream>
@@ -56,6 +52,12 @@ static bool validDirection ( Direction direction );
 static string directionAsString ( Direction direction );
 static Direction directionFromString ( const string & str );
 
+// Should have map of name-to-function.
+static void help()
+{
+    cerr << "create/move/left/right/report/remove/quit/help" << endl;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 
 class CommandStream
@@ -65,22 +67,54 @@ class CommandStream
         CommandStream ( FILE * stream );
         ~CommandStream();
         bool getCommand ( string & command ) const;
-        bool active() const { return m_stream != 0; }
     private:
         FILE * m_stream;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-class Command;  // forward declaration for CommandListener
+class Command;  // forward declaration for GameObject
 
 //////////////////////////////////////////////////////////////////////////////
-// Abstract interface.
+
+class GameObject
+{
+    public:
+        virtual void respond ( const Command & command ) = 0;
+        virtual bool constraintDecider
+        (   GameObject * object,
+            int xpos,
+            int ypos,
+            Direction direction,
+            bool onTable
+        );
+        virtual string name();
+        virtual int xpos();
+        virtual int ypos();
+        virtual Direction direction();
+        virtual bool onTable();
+    protected:
+        GameObject ( const char * name );
+        string m_name;
+        int m_xpos;
+        int m_ypos;
+        Direction m_direction;
+        bool m_onTable;
+};
+
+typedef void (GameObject::*GameObjectResponder) ( const Command & command );
+
+//////////////////////////////////////////////////////////////////////////////
 
 class CommandListener
 {
     public:
-        virtual void inform ( const Command & command ) = 0;
+        CommandListener ( GameObject * object, GameObjectResponder responder );
+        GameObject * object() const;
+        virtual void inform ( const Command & command );
+    private:
+        GameObject * m_object;
+        GameObjectResponder m_responder;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -94,7 +128,7 @@ class Command
         int ypos() const;
         Direction direction() const;
         string objectName() const;
-        CommandListener * commandListener() const;
+        GameObject * gameObject() const;
     private:
         Command
         (   const char * name,
@@ -102,14 +136,14 @@ class Command
             int ypos = 0,
             Direction direction = Invalid,
             const char * objectName = 0,
-            CommandListener * commandListener = 0
+            GameObject * gameObject = 0
         );
         string m_name;
         int m_xpos;
         int m_ypos;
         Direction m_direction;
         string m_objectName;
-        CommandListener * m_commandListener;
+        GameObject * m_gameObject;
     friend class CommandFactory;
 };
 
@@ -123,31 +157,34 @@ class CommandFactory
 };
 
 //////////////////////////////////////////////////////////////////////////////
+// This is what a GameObject registers with the corresponding Constraint in
+// order for the Constraint to give a verdict.
 
-class Robot : public CommandListener
+typedef bool (GameObject::*ConstraintDecider)
+    ( GameObject * object, int xpos, int ypos, Direction direction, bool onTable );
+
+
+class Robot : public GameObject
 {
     public:
-        virtual void inform ( const Command & command );
-        string name();
+        void respond ( const Command & command );
         void place ( int xpos, int ypos, Direction direction );
         void move();
         void left();
         void right();
         void report();
         void remove();
-        int xpos();
-        int ypos();
-        Direction direction();
-        bool onTable();
         static Robot * find ( const string & robotName );
+        bool constraintDecider
+        (   GameObject * object,
+            int xpos,
+            int ypos,
+            Direction direction,
+            bool onTable
+        );
 
     private:
         Robot ( const char * name );
-        string m_name;
-        int m_xpos;
-        int m_ypos;
-        Direction m_direction;
-        bool m_onTable;
     friend class RobotFactory;
 };
 
@@ -161,6 +198,32 @@ class RobotFactory
         const map< string, Robot* > & robots() const;
     private:
         map< string, Robot* > m_robots;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+// Just to constrain objects to remain within the table limits.
+
+class Table : public GameObject
+{
+    public:
+        Table ( int xmin, int ymin, int xmax, int ymax );   // for now, saves having a factory
+        void respond ( const Command & command );
+        bool constraintDecider
+        (   GameObject * object,
+            int xpos,
+            int ypos,
+            Direction direction,
+            bool onTable
+        );
+        int xmin();
+        int ymin();
+        int xmax();
+        int ymax();
+    private:
+        int m_xmin;
+        int m_ymin;
+        int m_xmax;
+        int m_ymax;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -182,7 +245,10 @@ class Broadcaster
 {
     public:
         static Broadcaster * singleton();
-        void registerCommandListener ( CommandListener * commandListener );
+        void createCommandListener
+        (   GameObject * object,
+            GameObjectResponder responder
+        );
         void broadcast ( const Command & command );
     private:
         static Broadcaster * m_broadcaster;
@@ -195,11 +261,35 @@ class Constraint
 {
     public:
         static bool acceptable
-        (   Robot * robot,  // what about other Listeners?
+        (   GameObject * object,
             int xpos,
             int ypos,
-            Direction direction
+            Direction direction,
+            bool onTable
         );
+    private:
+        Constraint
+        (   GameObject * object,
+            ConstraintDecider decider
+        );
+        GameObject * m_object;
+        ConstraintDecider m_decider;
+    friend class ConstraintFactory;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class ConstraintFactory
+{
+    public:
+        static ConstraintFactory * singleton();
+        Constraint * createConstraint
+        (   GameObject * object,
+            ConstraintDecider decider
+        );
+        const set< Constraint* > & constraints() const;
+    private:
+        set< Constraint* > m_constraints;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -208,16 +298,10 @@ extern int main ( int argc, char ** argv )
 {
     try
     {
+        Table theTable ( 0, 0, 10, 20 );
         // Also accepts robot-creation commands as input.
         Robot * robot1 = RobotFactory::singleton()->createRobot ( "Robbie" );
         Robot * robot2 = RobotFactory::singleton()->createRobot ( "Arthur" );
-
-        Broadcaster::singleton()->registerCommandListener ( robot1 );
-        Broadcaster::singleton()->registerCommandListener ( robot2 );
-
-        // Note that for now registerCommandListener stores *pointers* to the
-        // listeners, so we need to be sure they don't go out of scope while
-        // we're using them.
 
         // Read from supplied files or else stdin.
         if ( argc > 1 )
@@ -301,7 +385,7 @@ bool CommandStream::getCommand ( string & command ) const
         // A better way would be to use an iterator with a function to
         // encapsulate isspace or whatever... need to go back and look at the
         // STL API again.
-        // Also this may not be necessray as we later use istringstream to
+        // Also this may not be necessary as we later use istringstream to
         // parse it.
         size_t first = line.find_first_not_of ( " \t\n");
         size_t last = line.find_last_not_of ( " \t\n");
@@ -326,11 +410,11 @@ Command::Command
     int ypos,
     Direction direction,
     const char * objectName,
-    CommandListener * commandListener
+    GameObject * gameObject
 )
   : m_name ( name ), m_xpos ( xpos ), m_ypos ( ypos ),
     m_direction ( direction ), m_objectName ( objectName ),
-    m_commandListener ( commandListener )
+    m_gameObject ( gameObject )
 {
 }
 
@@ -359,9 +443,28 @@ string Command::objectName() const
     return m_objectName;
 }
 
-CommandListener * Command::commandListener() const
+GameObject * Command::gameObject() const
 {
-    return m_commandListener;
+    return m_gameObject;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+CommandListener::CommandListener
+(   GameObject * object,
+    GameObjectResponder responder
+) : m_object ( object ), m_responder ( responder )
+{
+}
+
+GameObject * CommandListener::object() const
+{
+    return m_object;
+}
+
+void CommandListener::inform ( const Command & command )
+{
+    (m_object->*m_responder) ( command );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -452,12 +555,11 @@ void Interpreter::run()
             // Now this switching is ugly...
             if ( command->name() == "create" )
             {
-                // ... and so is this: shouldn't the *robot* decide whether it
-                // wants to listen? That would allow some consistency with
-                // potential non-listening robots (fixed ones which can act as
-                // constraints).
-                Broadcaster::singleton()->registerCommandListener (
-                    RobotFactory::singleton()->createRobot ( command->objectName().c_str() ) );
+                RobotFactory::singleton()->createRobot ( command->objectName().c_str() );
+            }
+            else if ( command->name() == "help" )
+            {
+                help();
             }
             else if ( command->name() == "quit" )
             {
@@ -488,23 +590,24 @@ Broadcaster * Broadcaster::singleton()
 }
 
 // For completeness, ought to have remove as well.
-void Broadcaster::registerCommandListener
-(   CommandListener * commandListener
+void Broadcaster::createCommandListener
+(   GameObject * object,
+    GameObjectResponder responder
 )
 {
-    m_commandListeners.push_back ( commandListener );
+    m_commandListeners.push_back ( new CommandListener ( object, responder ) );
 }
 
 void Broadcaster::broadcast ( const Command & command )
 {
-    CommandListener * commandListener = command.commandListener();
+    GameObject * gameObject = command.gameObject();
 #if 0
     cerr << "Command: \"" << command.name() << "\""
          << " " << command.xpos()
          << " " << command.ypos()
          << " " << directionAsString(command.direction())
          << " \"" << command.objectName() << "\""
-         << " " << command.commandListener() << endl;
+         << " " << command.gameObject() << endl;
 #endif
     for ( std::vector< CommandListener* >::iterator iter = m_commandListeners.begin();
           iter != m_commandListeners.end(); ++iter )
@@ -512,11 +615,115 @@ void Broadcaster::broadcast ( const Command & command )
         // cerr << "Listener: " << (*iter) << endl;
         // Broadcast to all listeners or just the one that the Command
         // specifies.
-        if ( commandListener == 0 || commandListener == (*iter) )
+        if ( gameObject == 0 || gameObject == (*iter)->object() )
         {
             (*iter)->inform ( command );
         }
     }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+GameObject::GameObject ( const char * name )
+ : m_name ( name ),
+   m_xpos ( 0 ),            // }
+   m_ypos ( 0 ),            // } but irrelevant since not on table
+   m_direction ( Invalid ), // }
+   m_onTable ( false )
+{
+}
+
+string GameObject::name()
+{
+    return m_name;
+}
+
+int GameObject::xpos()
+{
+    return m_xpos;
+}
+
+int GameObject::ypos()
+{
+    return m_ypos;
+}
+
+Direction GameObject::direction()
+{
+    return m_direction;
+}
+
+bool GameObject::onTable()
+{
+    return m_onTable;
+}
+
+// Is the proposed placement of the given object acceptable to me?
+bool GameObject::constraintDecider
+(   GameObject * object,
+    int xpos,
+    int ypos,
+    Direction direction,
+    bool onTable
+)
+{
+    // cerr << "GameObject::constraintDecider " << name() << endl;
+    return true;    // notional GameObject doesn't care
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+Table::Table ( int xmin, int ymin, int xmax, int ymax )
+ : GameObject ( "Table" ),
+   m_xmin ( xmin ), m_ymin ( ymin ), m_xmax ( xmax ), m_ymax ( ymax )
+{
+    ConstraintFactory::singleton()->createConstraint ( this, GameObject::constraintDecider );
+}
+
+void Table::respond ( const Command & command )
+{
+    // No-op.
+}
+
+bool Table::constraintDecider
+(   GameObject * object,
+    int xpos,
+    int ypos,
+    Direction direction,
+    bool onTable
+)
+{
+    // cerr << "Table::constraintDecider " << name() << endl;
+    // cerr << "Ask about " << object->name() << " with " << xpos << ", " << ypos << endl;
+    // cerr << "I'm at " << m_xmin << ", " << m_ymin << " to " << m_xmax << ", " << m_ymax << endl;
+
+    // It's ok if it's the table itself or if it's not on the table or if it's
+    // within the table boundaries.
+    return object == this ||
+           ( ! onTable ) ||
+           ( m_xmin <= xpos && xpos < m_xmax &&
+             m_ymin <= ypos && ypos < m_ymax
+           );
+}
+
+int Table::xmin()
+{
+    return m_xmin;
+}
+
+int Table::ymin()
+{
+    return m_ymin;
+}
+
+int Table::xmax()
+{
+    return m_xmax;
+}
+
+int Table::ymax()
+{
+    return m_ymax;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -546,20 +753,16 @@ const map< string, Robot* > & RobotFactory::robots() const
 //////////////////////////////////////////////////////////////////////////////
 
 Robot::Robot ( const char * name )
- : m_name ( name ),
-   m_xpos ( 0 ),            // }
-   m_ypos ( 0 ),            // } but irrelevant since not on table
-   m_direction ( Invalid ), // }
-   m_onTable ( false )
+ : GameObject ( name )
 {
+    // This had better all be single-threaded, otherwise someone might
+    // broadcast a command to (or ask for a constraint-verdict from) this
+    // not-yet-fully-formed Robot.
+    Broadcaster::singleton()->createCommandListener ( this, GameObject::respond );
+    ConstraintFactory::singleton()->createConstraint ( this, GameObject::constraintDecider );
 }
 
-string Robot::name()
-{
-    return m_name;
-}
-
-void Robot::inform ( const Command & command )
+void Robot::respond ( const Command & command )
 {
     const string & commandName ( command.name() );
 
@@ -593,6 +796,7 @@ void Robot::inform ( const Command & command )
     else
     {
         cerr << "Invalid command " << commandName << endl;
+        help();
     }
 }
 
@@ -608,7 +812,7 @@ Robot * Robot::find ( const string & robotName )
 
 void Robot::place ( int xpos, int ypos, Direction direction )
 {
-    if ( Constraint::acceptable ( this, xpos, ypos, direction ) )
+    if ( Constraint::acceptable ( this, xpos, ypos, direction, true ) )
     {
         m_xpos = xpos;
         m_ypos = ypos;
@@ -617,7 +821,7 @@ void Robot::place ( int xpos, int ypos, Direction direction )
     }
     else
     {
-        cout << "Ignoring invalid PLACE co-ordinates" << endl;
+        cout << "Ignoring attempt to place robot " << m_name << " in invalid position" << endl;
     }
 }
 
@@ -666,7 +870,7 @@ void Robot::move()
         }
     }
 
-    if ( Constraint::acceptable ( this, newXpos, newYpos, m_direction ) )
+    if ( Constraint::acceptable ( this, newXpos, newYpos, m_direction, true ) )
     {
         m_xpos = newXpos;
         m_ypos = newYpos;
@@ -727,59 +931,81 @@ void Robot::remove()
     m_direction = Invalid;  // for good measure
 }
 
-int Robot::xpos()
+// Is the proposed placement of the given object acceptable to me?
+bool Robot::constraintDecider
+(   GameObject * object,
+    int xpos,
+    int ypos,
+    Direction direction,
+    bool onTable
+)
 {
-    return m_xpos;
-}
+    // cerr << "Robot::constraintDecider " << name() << endl;
 
-int Robot::ypos()
-{
-    return m_ypos;
-}
-
-Direction Robot::direction()
-{
-    return m_direction;
-}
-
-bool Robot::onTable()
-{
-    return m_onTable;
+    // If I'm being asked about myself then I don't care.
+    // If I'm not on the table or it's not on the table then I don't care.
+    // If I am on the table, then I only care about not being in the same
+    // place.
+    return ( this == object ) || ( ! m_onTable ) || ( ! onTable ) ||
+           ( m_xpos != xpos ) || ( m_ypos != ypos );
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-bool Constraint::acceptable
-(   Robot * robot,  // what about other Listeners?
-    int xpos,
-    int ypos,
-    Direction direction
+ConstraintFactory * ConstraintFactory::singleton()
+{
+    static ConstraintFactory * factory = 0;
+    if ( factory == 0 )
+    {
+        factory = new ConstraintFactory;
+    }
+    return factory;
+}
+
+Constraint * ConstraintFactory::createConstraint
+(   GameObject * object,
+    ConstraintDecider decider
 )
 {
-    // Check against table edges.
-    if ( xpos < 0 || xpos > 4 || ypos < 0 || ypos > 4 )
-    {
-        return false;
-    }
+    Constraint * constraint = new Constraint ( object, decider );
+    m_constraints.insert ( constraint );
+    return constraint;
+}
 
+const set< Constraint* > & ConstraintFactory::constraints() const
+{
+    return m_constraints;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+Constraint::Constraint ( GameObject * object, ConstraintDecider decider )
+  : m_object ( object ), m_decider ( decider )
+{
+}
+
+bool Constraint::acceptable
+(   GameObject * object,
+    int xpos,
+    int ypos,
+    Direction direction,
+    bool onTable
+)
+{
     // Check sane direction.
     if ( ! validDirection ( direction ) )
     {
         return false;
     }
 
-    // Check for collision with other robots.
-    const map< string, Robot* > & robots = RobotFactory::singleton()->robots();
-    for ( map< string, Robot* >::const_iterator iter = robots.begin();
-          iter != robots.end(); ++iter
+    // Check against all the registered Constraints.
+    const set< Constraint* > constraints = ConstraintFactory::singleton()->constraints();
+    for ( set< Constraint* >::const_iterator iter = constraints.begin();
+          iter != constraints.end(); ++iter
         )
     {
-        Robot * otherRobot = iter->second;
-        if ( otherRobot != robot &&         // different robot
-             otherRobot->onTable() &&       // } on table and
-             otherRobot->xpos() == xpos &&  // } already in
-             otherRobot->ypos() == ypos     // } proposed position
-           )
+        GameObject * constrainerObject = (*iter)->m_object;
+        ConstraintDecider decider = (*iter)->m_decider;
+        if ( ! (constrainerObject->*decider) ( object, xpos, ypos, direction, onTable ) )
         {
             return false;
         }
