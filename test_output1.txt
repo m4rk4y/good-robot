@@ -9,6 +9,17 @@ report
 remove
 help
 quit
+Valid commands are:
+create
+table
+place
+move
+left
+right
+report
+remove
+help
+quit
 Table limits are: [ ( 0, 0 ), ( 10, 10 ) ]
 Robot Robbie is not on the table
 Robot Arthur is not on the table

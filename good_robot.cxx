@@ -410,6 +410,9 @@ extern int main ( int argc, char ** argv )
         RobotFactory::singleton()->createRobot ( "Robbie" );
         RobotFactory::singleton()->createRobot ( "Arthur" );
 
+        // Be kind and emit help message first.
+        help();
+
         // Read from supplied files or else stdin.
         if ( argc > 1 )
         {
