@@ -1,0 +1,56 @@
+Valid commands are:
+create
+table
+place
+move
+left
+right
+report
+remove
+help
+quit
+Table limits are: [ ( 0, 0 ), ( 10, 10 ) ]
+Robot Robbie is not on the table
+Robot Arthur is not on the table
+Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
+Robot Robbie is not on the table
+Robot Arthur is not on the table
+Ignoring attempt to place robot Arthur in invalid position
+Invalid direction q for place
+Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
+Robot Robbie is not on the table
+Robot Arthur is at x = 7, y = 39, facing East
+Robot Robbie is not on the table
+Robot Robbie is not on the table
+Ignoring attempt to move robot Arthur to invalid position
+Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
+Robot Robbie is not on the table
+Robot Arthur is at x = 7, y = 39, facing North
+Robot R2D2 is at x = 5, y = 12, facing West
+Robot Robbie is not on the table
+Ignoring attempt to move robot Arthur to invalid position
+Ignoring attempt to move robot R2D2 to invalid position
+Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
+Robot Robbie is not on the table
+Robot Arthur is at x = 7, y = 39, facing North
+Robot R2D2 is not on the table
+Robot Robbie is not on the table
+Robot R2D2 is not on the table
+Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
+Robot Robbie is not on the table
+Robot Arthur is at x = 7, y = 39, facing East
+Robot R2D2 is not on the table
+Ignoring attempt to place robot Robbie in invalid position
+Ignoring attempt to place robot Arthur in invalid position
+Ignoring attempt to place robot R2D2 in invalid position
+Ignoring attempt to place robot Arthur in invalid position
+Ignoring attempt to place robot R2D2 in invalid position
+Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
+Robot Robbie is at x = 10, y = 30, facing West
+Robot Arthur is at x = 7, y = 39, facing East
+Robot R2D2 is not on the table
+Robot R2D2 is not on the table
+Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
+Robot Robbie is at x = 9, y = 30, facing West
+Robot Arthur is at x = 8, y = 39, facing East
+Robot R2D2 is not on the table

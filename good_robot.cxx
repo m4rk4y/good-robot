@@ -6,7 +6,7 @@ Synopsis:
     Accepts commands (from stdin or named input files):
         table <xmin> <ymin> <xmax> <ymax>
         create <new-robot-name>
-        [ <robot-name>:] place
+        [ <robot-name>:] place <x> <y> <direction>
         [ <robot-name>:] move
         [ <robot-name>:] left
         [ <robot-name>:] right
@@ -17,6 +17,8 @@ Synopsis:
 
     Commands are case-insensitive. Robot names are case-sensitive.
 
+    Arguments (for "table" and "place") can be comma- or space-delimited.
+
     Starts with a table at [ ( 0, 0 ), ( 10, 10 ) ] but "table" resizes this.
     Starts with two robots called "Robbie" and "Arthur", not on the table.
 
@@ -24,8 +26,9 @@ Synopsis:
 
     Robots cannot be moved past the table boundaries, nor onto an occupied position.
 
-    The table can however be resized on the fly so that a Robot is outside its
-    boundaries. Please don't do this :-)
+    The table can however be resized on the fly so that a Robot suddenly finds
+    itself outside the boundaries. Please don't do this as it upsets the
+    Robot's world view :-)
 
 Flow:
 
@@ -88,6 +91,9 @@ Classes:
                 to relay constraint-verdict requests to the GameObject
 
     ConstraintFactory: constructs Constraints
+
+    Tokeniser: DIY stand-in to handle comma and whitespace (because
+               istringstream parsing only handles whitespace)
 
     Various Exception classes.
 */
@@ -349,6 +355,19 @@ class ConstraintFactory
 
 //////////////////////////////////////////////////////////////////////////////
 
+class Tokeniser
+{
+    public:
+        Tokeniser ( const string & stringToParse, const string & separators );
+        string nextToken();
+    private:
+        string m_stringToParse;
+        string m_separators;
+        size_t m_currentPosition;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
 class InvalidCommandException : public exception
 {
     public:
@@ -415,6 +434,11 @@ extern int main ( int argc, char ** argv )
     catch ( const char * error )
     {
         cerr << "Caught exception: " << error << endl;
+        return 1;
+    }
+    catch ( const exception & error )
+    {
+        cerr << "Caught exception: " << error.what() << endl;
         return 1;
     }
     catch ( ... )
@@ -535,9 +559,8 @@ Command * CommandFactory::createCommand ( const string & commandString ) const
         // else verb ends with a colon which I imagine will fail quite soon.
     }
 
-    checkValidCommand ( verb );
-
     string lcVerb ( lowerCaseString ( verb ) );
+    checkValidCommand ( lcVerb );
 
     // Store the rest of the command for later command-dependent parsing.
     string restOfString;
@@ -597,7 +620,6 @@ GameObject::GameObject ( const string & name )
    m_direction ( Invalid ), // }
    m_onTable ( false )
 {
-
     // It would be tempting to put these here, but that would preclude derived
     // classes from choosing *not* to respond and/or constrain.
     // Broadcaster::singleton()->createCommandListener ( this, GameObject::respond );
@@ -662,13 +684,16 @@ void Robot::respond ( const Command & command )
     // easier in Ruby, as I could just use send().
     if ( commandName == "place" )
     {
-        istringstream parser ( command.qualifiers() );
-        int newXpos;
-        int newYpos;
-        Direction newDirection;
-        string newDirectionToken;
-        parser >> newXpos >> newYpos >> newDirectionToken;
-        newDirection = directionFromString ( newDirectionToken );
+        // DIY parsing to handle comma and whitespace.
+        Tokeniser tokeniser ( command.qualifiers(), ", " );
+        string newXposToken = tokeniser.nextToken();
+        string newYposToken = tokeniser.nextToken();
+        string newDirectionToken = tokeniser.nextToken();
+
+        // Got tokens, now convert them.
+        int newXpos = atoi ( newXposToken.c_str() );
+        int newYpos = atoi ( newYposToken.c_str() );
+        Direction newDirection ( directionFromString ( newDirectionToken ) );
         if ( newDirection == Invalid )
         {
             throw InvalidDirectionException ( newDirectionToken, "place" );
@@ -905,12 +930,18 @@ void Table::respond ( const Command & command )
     }
     else if ( commandName == "table" )
     {
-        istringstream parser ( command.qualifiers() );
-        int newXmin;
-        int newYmin;
-        int newXmax;
-        int newYmax;
-        parser >> newXmin >> newYmin >> newXmax >> newYmax;
+        // DIY parsing to handle comma and whitespace.
+        Tokeniser tokeniser ( command.qualifiers(), ", " );
+        string newXminToken = tokeniser.nextToken();
+        string newYminToken = tokeniser.nextToken();
+        string newXmaxToken = tokeniser.nextToken();
+        string newYmaxToken = tokeniser.nextToken();
+
+        // Got tokens, now convert them.
+        int newXmin = atoi ( newXminToken.c_str() );
+        int newYmin = atoi ( newYminToken.c_str() );
+        int newXmax = atoi ( newXmaxToken.c_str() );
+        int newYmax = atoi ( newYmaxToken.c_str() );
         setTable ( newXmin, newYmin, newXmax, newYmax );
     }
 }
@@ -1123,6 +1154,28 @@ const set< Constraint* > & ConstraintFactory::constraints() const
 }
 
 //////////////////////////////////////////////////////////////////////////////
+
+Tokeniser::Tokeniser ( const string & stringToParse, const string & separators )
+  : m_stringToParse ( stringToParse ),
+    m_separators ( separators ),
+    m_currentPosition ( 0 )
+{
+}
+
+string Tokeniser::nextToken()
+{
+    size_t nextTokenStart = m_stringToParse.find_first_not_of ( m_separators, m_currentPosition );
+    if ( nextTokenStart == string::npos )
+    {
+        return "";  // to signal EOS
+    }
+    m_currentPosition = m_stringToParse.find_first_of ( m_separators, nextTokenStart+1 );
+    return m_currentPosition == string::npos ?
+           m_stringToParse.substr ( nextTokenStart ) :
+           m_stringToParse.substr ( nextTokenStart, m_currentPosition-nextTokenStart );
+}
+
+//////////////////////////////////////////////////////////////////////////////
 // Direction utilities.
 
 static bool validDirection ( Direction direction )
@@ -1153,7 +1206,7 @@ static Direction directionFromString ( const string & str )
 //////////////////////////////////////////////////////////////////////////////
 // Some helpers.
 
-// Should have map of name-to-function really;
+// Should have map of name-to-function really.
 static void help()
 {
     cerr << "Valid commands are:" << endl;
