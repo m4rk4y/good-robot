@@ -88,6 +88,8 @@ Classes:
                 to relay constraint-verdict requests to the GameObject
 
     ConstraintFactory: constructs Constraints
+
+    Various Exception classes.
 */
 
 #include <fstream>
@@ -96,6 +98,7 @@ Classes:
 #include <set>
 #include <string>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 using namespace std;
@@ -346,6 +349,27 @@ class ConstraintFactory
 
 //////////////////////////////////////////////////////////////////////////////
 
+class InvalidCommandException : public exception
+{
+    public:
+        InvalidCommandException ( const string & message )
+          : exception ( message.c_str() ) {}
+};
+
+class InvalidDirectionException : public exception
+{
+    public:
+        InvalidDirectionException
+        (   const string & directionString,
+            const string & message
+        ) : exception ( message.c_str() ), m_directionString ( directionString ) {}
+        const string & directionString() const { return m_directionString; }
+    private:
+        string m_directionString;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
 extern int main ( int argc, char ** argv )
 {
     try
@@ -431,7 +455,6 @@ CommandStream::~CommandStream()
 
 bool CommandStream::getCommand ( string & command ) const
 {
-    string line;
     for (;;)    // loop until we read a non-blank line or EOF
     {
         // Hideous but I can't get the STL equivalent to handle file streams
@@ -442,23 +465,9 @@ bool CommandStream::getCommand ( string & command ) const
         {
             return false;
         }
-        line = buffer;
-
-        // Got a line? Trim it.
-        // A better way would be to use an iterator with a function to
-        // encapsulate isspace or whatever... need to go back and look at the
-        // STL API again.
-        // Also this may not be necessary as we later use istringstream to
-        // parse it.
-        size_t first = line.find_first_not_of ( " \t\n");
-        size_t last = line.find_last_not_of ( " \t\n");
-        // "abc": first = 0, last = 2
-        // " abc": first = 1, last = 3
-        // "abc ": first = 0, last = 2
-        // " abc ": first = 1, last = 3
-        if ( first != string::npos )    // and by implication last != npos
+        command = buffer;
+        if ( ! command.empty() )
         {
-            command = line.substr ( first, last - first + 1 );
             return true;
         }
         // else content-free line so try for the next one
@@ -557,8 +566,7 @@ void CommandFactory::checkValidCommand ( const string & command ) const
             return;
         }
     }
-    help();
-    throw "Invalid command";
+    throw InvalidCommandException ( command.c_str() );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -663,7 +671,7 @@ void Robot::respond ( const Command & command )
         newDirection = directionFromString ( newDirectionToken );
         if ( newDirection == Invalid )
         {
-            throw "Invalid direction for PLACE";
+            throw InvalidDirectionException ( newDirectionToken, "place" );
         }
         place ( newXpos, newYpos, newDirection );
     }
@@ -995,6 +1003,15 @@ void Interpreter::run()
         catch ( const char * error )
         {
             cerr << "Exception: " << error << endl;
+        }
+        catch ( InvalidCommandException & error )
+        {
+            cerr << "Invalid command: " << error.what() << endl;
+            help();
+        }
+        catch ( InvalidDirectionException & error )
+        {
+            cerr << "Invalid direction " << error.directionString() << " for " << error.what() << endl;
         }
         catch ( ... )
         {
