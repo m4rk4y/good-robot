@@ -1,4 +1,60 @@
 /*
+Toy robot game.
+
+Synopsis:
+
+    Accepts commands (from stdin or named input files):
+        table <xmin> <ymin> <xmax> <ymax>
+        create <new-robot-name>
+        [ <robot-name>:] place
+        [ <robot-name>:] move
+        [ <robot-name>:] left
+        [ <robot-name>:] right
+        [ <robot-name>:] report
+        [ <robot-name>:] remove
+        quit
+        help
+
+    Commands are case-insensitive. Robot names are case-sensitive.
+
+    Starts with a table at [ ( 0, 0 ), ( 10, 10 ) ] but "table" resizes this.
+    Starts with two robots called "Robbie" and "Arthur", not on the table.
+
+    place/move/left/right/report/remove act on all robots or just the named one.
+
+    Robots cannot be moved past the table boundaries, nor onto an occupied position.
+
+    The table can however be resized on the fly so that a Robot is outside its
+    boundaries. Please don't do this :-)
+
+Flow:
+
+(1) main loop:
+
+    while read-command
+        if help
+            help
+        elsif quit
+            quit
+        elsif create
+            create-robot
+                register-as-command-listener
+                register-as-constrainer
+        else
+            broadcast-command-to-all-listeners
+                listeners.each
+                    relay-command-to-listening-object
+        endif
+    endwhile
+
+(2) command:
+
+    constrainers.each
+        check-this-proposal
+    if ok
+        do it
+    endif
+
 Classes:
 
     CommandStream: reads files or stdin until EOF and produces command lines
@@ -18,15 +74,15 @@ Classes:
 
     RobotFactory: constructs Robots
 
-    Table: implementation of GameObject, which does not respond to Commands
-           but does provide a constraint-request verdict
-
-    Broadcaster: broadcasts Commands to CommandListeners
+    Table: implementation of GameObject, which responds to (very few) Commands
+           and provides a constraint-request verdict
 
     Interpreter: main controlling object which
                    - uses CommandStream to read lines
                    - creates Commands
                    - tells Broadcaster to broadcast the Commands
+
+    Broadcaster: broadcasts Commands to CommandListeners
 
     Constraint: checks proposed moves etc; constructed by GameObject in order
                 to relay constraint-verdict requests to the GameObject
@@ -51,12 +107,8 @@ enum Direction { Invalid, North, East, South, West };
 static bool validDirection ( Direction direction );
 static string directionAsString ( Direction direction );
 static Direction directionFromString ( const string & str );
-
-// Should have map of name-to-function.
-static void help()
-{
-    cerr << "create/move/left/right/report/remove/quit/help" << endl;
-}
+static void help();
+static string lowerCaseString ( const string & str );
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -73,7 +125,58 @@ class CommandStream
 
 //////////////////////////////////////////////////////////////////////////////
 
-class Command;  // forward declaration for GameObject
+class GameObject;   // forward declaration
+
+class Command
+{
+    public:
+        string name() const;
+        string qualifiers() const;
+        GameObject * gameObject() const;
+    private:
+        Command
+        (   const string & name,
+            const string & qualifers,
+            GameObject * gameObject = 0
+        );
+        string m_name;
+        string m_qualifiers;
+        GameObject * m_gameObject;
+    friend class CommandFactory;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+
+class CommandFactory
+{
+    public:
+        static CommandFactory * singleton();
+        void checkValidCommand ( const string & command ) const;
+        const vector<string> & validCommands() const;
+        void setValidCommands ( const vector<string> & commands );
+        Command * createCommand ( const string & commandString ) const;
+    private:
+        vector<string> m_validCommands;
+};
+
+//////////////////////////////////////////////////////////////////////////////
+// This is what a GameObject registers with the Broadcaster in order to
+// receive Commands.
+
+typedef void (GameObject::*GameObjectResponder) ( const Command & command );
+
+//////////////////////////////////////////////////////////////////////////////
+
+class CommandListener
+{
+    public:
+        CommandListener ( GameObject * object, GameObjectResponder responder );
+        GameObject * object() const;
+        virtual void inform ( const Command & command );
+    private:
+        GameObject * m_object;
+        GameObjectResponder m_responder;
+};
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -94,66 +197,12 @@ class GameObject
         virtual Direction direction();
         virtual bool onTable();
     protected:
-        GameObject ( const char * name );
+        GameObject ( const string & name );
         string m_name;
         int m_xpos;
         int m_ypos;
         Direction m_direction;
         bool m_onTable;
-};
-
-typedef void (GameObject::*GameObjectResponder) ( const Command & command );
-
-//////////////////////////////////////////////////////////////////////////////
-
-class CommandListener
-{
-    public:
-        CommandListener ( GameObject * object, GameObjectResponder responder );
-        GameObject * object() const;
-        virtual void inform ( const Command & command );
-    private:
-        GameObject * m_object;
-        GameObjectResponder m_responder;
-};
-
-//////////////////////////////////////////////////////////////////////////////
-// Capacity to invent new commands on the fly is limited.
-
-class Command
-{
-    public:
-        string name() const;
-        int xpos() const;
-        int ypos() const;
-        Direction direction() const;
-        string objectName() const;
-        GameObject * gameObject() const;
-    private:
-        Command
-        (   const char * name,
-            int xpos = 0,
-            int ypos = 0,
-            Direction direction = Invalid,
-            const char * objectName = 0,
-            GameObject * gameObject = 0
-        );
-        string m_name;
-        int m_xpos;
-        int m_ypos;
-        Direction m_direction;
-        string m_objectName;
-        GameObject * m_gameObject;
-    friend class CommandFactory;
-};
-
-//////////////////////////////////////////////////////////////////////////////
-
-class CommandFactory
-{
-    public:
-        static CommandFactory * singleton();
-        Command * createCommand ( const string & commandString ) const;
 };
 
 //////////////////////////////////////////////////////////////////////////////
@@ -163,6 +212,7 @@ class CommandFactory
 typedef bool (GameObject::*ConstraintDecider)
     ( GameObject * object, int xpos, int ypos, Direction direction, bool onTable );
 
+//////////////////////////////////////////////////////////////////////////////
 
 class Robot : public GameObject
 {
@@ -184,7 +234,7 @@ class Robot : public GameObject
         );
 
     private:
-        Robot ( const char * name );
+        Robot ( const string & name );
     friend class RobotFactory;
 };
 
@@ -194,7 +244,7 @@ class RobotFactory
 {
     public:
         static RobotFactory * singleton();
-        Robot * createRobot ( const char * robotName );
+        Robot * createRobot ( const string & robotName );
         const map< string, Robot* > & robots() const;
     private:
         map< string, Robot* > m_robots;
@@ -206,8 +256,9 @@ class RobotFactory
 class Table : public GameObject
 {
     public:
-        Table ( int xmin, int ymin, int xmax, int ymax );   // for now, saves having a factory
+        static void setTable ( int xmin, int ymin, int xmax, int ymax );
         void respond ( const Command & command );
+        void report();
         bool constraintDecider
         (   GameObject * object,
             int xpos,
@@ -220,6 +271,7 @@ class Table : public GameObject
         int xmax();
         int ymax();
     private:
+        Table ( int xmin, int ymin, int xmax, int ymax );
         int m_xmin;
         int m_ymin;
         int m_xmax;
@@ -298,10 +350,21 @@ extern int main ( int argc, char ** argv )
 {
     try
     {
-        Table theTable ( 0, 0, 10, 20 );
-        // Also accepts robot-creation commands as input.
-        Robot * robot1 = RobotFactory::singleton()->createRobot ( "Robbie" );
-        Robot * robot2 = RobotFactory::singleton()->createRobot ( "Arthur" );
+        vector<string> validCommands;
+        validCommands.push_back ( "create" );
+        validCommands.push_back ( "table" );
+        validCommands.push_back ( "place" );
+        validCommands.push_back ( "move" );
+        validCommands.push_back ( "left" );
+        validCommands.push_back ( "right" );
+        validCommands.push_back ( "report" );
+        validCommands.push_back ( "remove" );
+        validCommands.push_back ( "help" );
+        validCommands.push_back ( "quit" );
+        CommandFactory::singleton()->setValidCommands ( validCommands );
+        Table::setTable ( 0, 0, 10, 10 );
+        RobotFactory::singleton()->createRobot ( "Robbie" );
+        RobotFactory::singleton()->createRobot ( "Arthur" );
 
         // Read from supplied files or else stdin.
         if ( argc > 1 )
@@ -405,15 +468,11 @@ bool CommandStream::getCommand ( string & command ) const
 //////////////////////////////////////////////////////////////////////////////
 
 Command::Command
-(   const char * name,
-    int xpos,
-    int ypos,
-    Direction direction,
-    const char * objectName,
+(   const string & name,
+    const string & qualifiers,
     GameObject * gameObject
 )
-  : m_name ( name ), m_xpos ( xpos ), m_ypos ( ypos ),
-    m_direction ( direction ), m_objectName ( objectName ),
+  : m_name ( name ), m_qualifiers ( qualifiers ),
     m_gameObject ( gameObject )
 {
 }
@@ -423,48 +482,14 @@ string Command::name() const
     return m_name;
 }
 
-int Command::xpos() const
+string Command::qualifiers() const
 {
-    return m_xpos;
-}
-
-int Command::ypos() const
-{
-    return m_ypos;
-}
-
-Direction Command::direction() const
-{
-    return m_direction;
-}
-
-string Command::objectName() const
-{
-    return m_objectName;
+    return m_qualifiers;
 }
 
 GameObject * Command::gameObject() const
 {
     return m_gameObject;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-
-CommandListener::CommandListener
-(   GameObject * object,
-    GameObjectResponder responder
-) : m_object ( object ), m_responder ( responder )
-{
-}
-
-GameObject * CommandListener::object() const
-{
-    return m_object;
-}
-
-void CommandListener::inform ( const Command & command )
-{
-    (m_object->*m_responder) ( command );
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -498,139 +523,77 @@ Command * CommandFactory::createCommand ( const string & commandString ) const
             // Move on to actual verb.
             parser >> verb;
         }
-        // else verb ends with a colon which I imagine will fail later, but we
-        // certainly can't assert that here.
+        // else verb ends with a colon which I imagine will fail quite soon.
     }
 
-    string lcVerb;
-    // string.tolower by steam. Ugh.
-    for ( const char * chPtr = verb.c_str(); *chPtr != '\0'; ++chPtr )
-    {
-        lcVerb.push_back ( tolower( *chPtr ) );
-    }
+    checkValidCommand ( verb );
 
-    int newXpos = 0;
-    int newYpos = 0;
-    Direction newDirection = Invalid;
-    string objectName ( "" );
+    string lcVerb ( lowerCaseString ( verb ) );
 
-    // Parse for extra arguments when appropriate.
-    if ( lcVerb == "place" )
+    // Store the rest of the command for later command-dependent parsing.
+    string restOfString;
+    getline ( parser, restOfString );
+    return new Command ( lcVerb, restOfString, knownRobot );
+}
+
+void CommandFactory::setValidCommands ( const vector<string> & commands )
+{
+    m_validCommands = commands;
+}
+
+const vector<string> & CommandFactory::validCommands() const
+{
+    return m_validCommands;
+}
+
+void CommandFactory::checkValidCommand ( const string & command ) const
+{
+    for ( vector<string>::const_iterator iter = m_validCommands.begin();
+          iter != m_validCommands.end(); ++iter
+        )
     {
-        string newDirectionToken;
-        parser >> newXpos >> newYpos >> newDirectionToken;
-        newDirection = directionFromString ( newDirectionToken );
-        if ( newDirection == Invalid )
+        if ( *iter == command )
         {
-            throw "Invalid direction for PLACE";
+            return;
         }
     }
-    else if ( lcVerb == "create" )
-    {
-        parser >> objectName;
-    }
-
-    return new Command ( lcVerb.c_str(),
-                         newXpos, newYpos, newDirection, objectName.c_str(),
-                         knownRobot );
+    help();
+    throw "Invalid command";
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-Interpreter::Interpreter ( CommandStream & commandStream )
-  : m_commandStream ( commandStream )
-{
-}
-
-void Interpreter::run()
-{
-    string commandString;
-    while ( m_commandStream.getCommand ( commandString ) )
-    {
-        try
-        {
-            Command * command =
-                CommandFactory::singleton()->createCommand ( commandString );
-            scoped_ptr<Command> freeCommand ( command );
-            // Now this switching is ugly...
-            if ( command->name() == "create" )
-            {
-                RobotFactory::singleton()->createRobot ( command->objectName().c_str() );
-            }
-            else if ( command->name() == "help" )
-            {
-                help();
-            }
-            else if ( command->name() == "quit" )
-            {
-                return;
-            }
-            else
-            {
-                Broadcaster::singleton()->broadcast ( *command );
-            }
-        }
-        catch ( ... )   // should invent specific exception
-        {
-            cerr << "Failed to create or run command \"" << commandString << "\"" << endl;
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////
-
-Broadcaster * Broadcaster::singleton()
-{
-    static Broadcaster * broadcaster = 0;
-    if ( broadcaster == 0 )
-    {
-        broadcaster = new Broadcaster;
-    }
-    return broadcaster;
-}
-
-// For completeness, ought to have remove as well.
-void Broadcaster::createCommandListener
+CommandListener::CommandListener
 (   GameObject * object,
     GameObjectResponder responder
-)
+) : m_object ( object ), m_responder ( responder )
 {
-    m_commandListeners.push_back ( new CommandListener ( object, responder ) );
 }
 
-void Broadcaster::broadcast ( const Command & command )
+GameObject * CommandListener::object() const
 {
-    GameObject * gameObject = command.gameObject();
-#if 0
-    cerr << "Command: \"" << command.name() << "\""
-         << " " << command.xpos()
-         << " " << command.ypos()
-         << " " << directionAsString(command.direction())
-         << " \"" << command.objectName() << "\""
-         << " " << command.gameObject() << endl;
-#endif
-    for ( std::vector< CommandListener* >::iterator iter = m_commandListeners.begin();
-          iter != m_commandListeners.end(); ++iter )
-    {
-        // cerr << "Listener: " << (*iter) << endl;
-        // Broadcast to all listeners or just the one that the Command
-        // specifies.
-        if ( gameObject == 0 || gameObject == (*iter)->object() )
-        {
-            (*iter)->inform ( command );
-        }
-    }
+    return m_object;
+}
+
+void CommandListener::inform ( const Command & command )
+{
+    (m_object->*m_responder) ( command );
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-GameObject::GameObject ( const char * name )
+GameObject::GameObject ( const string & name )
  : m_name ( name ),
    m_xpos ( 0 ),            // }
    m_ypos ( 0 ),            // } but irrelevant since not on table
    m_direction ( Invalid ), // }
    m_onTable ( false )
 {
+
+    // It would be tempting to put these here, but that would preclude derived
+    // classes from choosing *not* to respond and/or constrain.
+    // Broadcaster::singleton()->createCommandListener ( this, GameObject::respond );
+    // ConstraintFactory::singleton()->createConstraint ( this, GameObject::constraintDecider );
 }
 
 string GameObject::name()
@@ -667,92 +630,12 @@ bool GameObject::constraintDecider
     bool onTable
 )
 {
-    // cerr << "GameObject::constraintDecider " << name() << endl;
     return true;    // notional GameObject doesn't care
 }
 
 //////////////////////////////////////////////////////////////////////////////
 
-Table::Table ( int xmin, int ymin, int xmax, int ymax )
- : GameObject ( "Table" ),
-   m_xmin ( xmin ), m_ymin ( ymin ), m_xmax ( xmax ), m_ymax ( ymax )
-{
-    ConstraintFactory::singleton()->createConstraint ( this, GameObject::constraintDecider );
-}
-
-void Table::respond ( const Command & command )
-{
-    // No-op.
-}
-
-bool Table::constraintDecider
-(   GameObject * object,
-    int xpos,
-    int ypos,
-    Direction direction,
-    bool onTable
-)
-{
-    // cerr << "Table::constraintDecider " << name() << endl;
-    // cerr << "Ask about " << object->name() << " with " << xpos << ", " << ypos << endl;
-    // cerr << "I'm at " << m_xmin << ", " << m_ymin << " to " << m_xmax << ", " << m_ymax << endl;
-
-    // It's ok if it's the table itself or if it's not on the table or if it's
-    // within the table boundaries.
-    return object == this ||
-           ( ! onTable ) ||
-           ( m_xmin <= xpos && xpos < m_xmax &&
-             m_ymin <= ypos && ypos < m_ymax
-           );
-}
-
-int Table::xmin()
-{
-    return m_xmin;
-}
-
-int Table::ymin()
-{
-    return m_ymin;
-}
-
-int Table::xmax()
-{
-    return m_xmax;
-}
-
-int Table::ymax()
-{
-    return m_ymax;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-
-RobotFactory * RobotFactory::singleton()
-{
-    static RobotFactory * factory = 0;
-    if ( factory == 0 )
-    {
-        factory = new RobotFactory;
-    }
-    return factory;
-}
-
-Robot * RobotFactory::createRobot ( const char * robotName )
-{
-    Robot * robot = new Robot ( robotName );
-    m_robots.insert ( pair< string, Robot* > ( robotName, robot ) );
-    return robot;
-}
-
-const map< string, Robot* > & RobotFactory::robots() const
-{
-    return m_robots;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-
-Robot::Robot ( const char * name )
+Robot::Robot ( const string & name )
  : GameObject ( name )
 {
     // This had better all be single-threaded, otherwise someone might
@@ -771,7 +654,18 @@ void Robot::respond ( const Command & command )
     // easier in Ruby, as I could just use send().
     if ( commandName == "place" )
     {
-        place ( command.xpos(), command.ypos(), command.direction() );
+        istringstream parser ( command.qualifiers() );
+        int newXpos;
+        int newYpos;
+        Direction newDirection;
+        string newDirectionToken;
+        parser >> newXpos >> newYpos >> newDirectionToken;
+        newDirection = directionFromString ( newDirectionToken );
+        if ( newDirection == Invalid )
+        {
+            throw "Invalid direction for PLACE";
+        }
+        place ( newXpos, newYpos, newDirection );
     }
     else if ( commandName == "move" )
     {
@@ -792,11 +686,6 @@ void Robot::respond ( const Command & command )
     else if ( commandName == "remove" )
     {
         remove();
-    }
-    else
-    {
-        cerr << "Invalid command " << commandName << endl;
-        help();
     }
 }
 
@@ -940,8 +829,6 @@ bool Robot::constraintDecider
     bool onTable
 )
 {
-    // cerr << "Robot::constraintDecider " << name() << endl;
-
     // If I'm being asked about myself then I don't care.
     // If I'm not on the table or it's not on the table then I don't care.
     // If I am on the table, then I only care about not being in the same
@@ -952,32 +839,208 @@ bool Robot::constraintDecider
 
 //////////////////////////////////////////////////////////////////////////////
 
-ConstraintFactory * ConstraintFactory::singleton()
+RobotFactory * RobotFactory::singleton()
 {
-    static ConstraintFactory * factory = 0;
+    static RobotFactory * factory = 0;
     if ( factory == 0 )
     {
-        factory = new ConstraintFactory;
+        factory = new RobotFactory;
     }
     return factory;
 }
 
-Constraint * ConstraintFactory::createConstraint
-(   GameObject * object,
-    ConstraintDecider decider
-)
+Robot * RobotFactory::createRobot ( const string & robotName )
 {
-    Constraint * constraint = new Constraint ( object, decider );
-    m_constraints.insert ( constraint );
-    return constraint;
+    Robot * robot = new Robot ( robotName );
+    m_robots.insert ( pair< string, Robot* > ( robotName, robot ) );
+    return robot;
 }
 
-const set< Constraint* > & ConstraintFactory::constraints() const
+const map< string, Robot* > & RobotFactory::robots() const
 {
-    return m_constraints;
+    return m_robots;
 }
 
 //////////////////////////////////////////////////////////////////////////////
+
+Table::Table ( int xmin, int ymin, int xmax, int ymax )
+ : GameObject ( "Table" ),
+   m_xmin ( xmin ), m_ymin ( ymin ), m_xmax ( xmax ), m_ymax ( ymax )
+{
+    Broadcaster::singleton()->createCommandListener ( this, GameObject::respond );
+    ConstraintFactory::singleton()->createConstraint ( this, GameObject::constraintDecider );
+}
+
+void Table::setTable ( int xmin, int ymin, int xmax, int ymax )
+{
+    static Table * table = 0;
+    if ( table == 0 )
+    {
+        table = new Table ( xmin, ymin, xmax, ymax );
+    }
+    else
+    {
+        table->m_xmin = xmin;
+        table->m_ymin = ymin;
+        table->m_xmax = xmax;
+        table->m_ymax = ymax;
+    }
+}
+
+void Table::respond ( const Command & command )
+{
+    const string & commandName ( command.name() );
+
+    if ( commandName == "report" )
+    {
+        report();
+    }
+    else if ( commandName == "table" )
+    {
+        istringstream parser ( command.qualifiers() );
+        int newXmin;
+        int newYmin;
+        int newXmax;
+        int newYmax;
+        parser >> newXmin >> newYmin >> newXmax >> newYmax;
+        setTable ( newXmin, newYmin, newXmax, newYmax );
+    }
+}
+
+void Table::report()
+{
+    cout << "Table limits are: [ ( " << m_xmin << ", " << m_ymin << " ), ( "
+         << m_xmax << ", " << m_ymax << " ) ]" << endl;
+}
+
+bool Table::constraintDecider
+(   GameObject * object,
+    int xpos,
+    int ypos,
+    Direction direction,
+    bool onTable
+)
+{
+    // It's ok if it's the table itself or if it's not on the table or if it's
+    // within the table boundaries.
+    return object == this ||
+           ( ! onTable ) ||
+           ( m_xmin <= xpos && xpos < m_xmax &&
+             m_ymin <= ypos && ypos < m_ymax
+           );
+}
+
+int Table::xmin()
+{
+    return m_xmin;
+}
+
+int Table::ymin()
+{
+    return m_ymin;
+}
+
+int Table::xmax()
+{
+    return m_xmax;
+}
+
+int Table::ymax()
+{
+    return m_ymax;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+Interpreter::Interpreter ( CommandStream & commandStream )
+  : m_commandStream ( commandStream )
+{
+}
+
+void Interpreter::run()
+{
+    string commandString;
+    while ( m_commandStream.getCommand ( commandString ) )
+    {
+        try
+        {
+            Command * command =
+                CommandFactory::singleton()->createCommand ( commandString );
+            scoped_ptr<Command> freeCommand ( command );
+            // Now this switching is ugly...
+            if ( command->name() == "create" )
+            {
+                string newObjectName;
+                istringstream parser ( command->qualifiers() );
+                parser >> newObjectName;
+                RobotFactory::singleton()->createRobot ( newObjectName );
+            }
+            else if ( command->name() == "help" )
+            {
+                help();
+            }
+            else if ( command->name() == "quit" )
+            {
+                return;
+            }
+            else
+            {
+                Broadcaster::singleton()->broadcast ( *command );
+            }
+        }
+        catch ( const string & error )
+        {
+            cerr << "Exception: " << error << endl;
+        }
+        catch ( const char * error )
+        {
+            cerr << "Exception: " << error << endl;
+        }
+        catch ( ... )
+        {
+            cerr << "Failed to create or run command \"" << commandString << "\"" << endl;
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
+Broadcaster * Broadcaster::singleton()
+{
+    static Broadcaster * broadcaster = 0;
+    if ( broadcaster == 0 )
+    {
+        broadcaster = new Broadcaster;
+    }
+    return broadcaster;
+}
+
+// For completeness, ought to have remove as well.
+void Broadcaster::createCommandListener
+(   GameObject * object,
+    GameObjectResponder responder
+)
+{
+    m_commandListeners.push_back ( new CommandListener ( object, responder ) );
+}
+
+void Broadcaster::broadcast ( const Command & command )
+{
+    GameObject * gameObject = command.gameObject();
+    for ( std::vector< CommandListener* >::iterator iter = m_commandListeners.begin();
+          iter != m_commandListeners.end(); ++iter )
+    {
+        // Broadcast to all listeners or just the one that the Command
+        // specifies.
+        if ( gameObject == 0 || gameObject == (*iter)->object() )
+        {
+            (*iter)->inform ( command );
+        }
+    }
+}
+
+//////////////////////////////////////////////////////////////////////////////
+
 Constraint::Constraint ( GameObject * object, ConstraintDecider decider )
   : m_object ( object ), m_decider ( decider )
 {
@@ -1016,6 +1079,33 @@ bool Constraint::acceptable
 }
 
 //////////////////////////////////////////////////////////////////////////////
+
+ConstraintFactory * ConstraintFactory::singleton()
+{
+    static ConstraintFactory * factory = 0;
+    if ( factory == 0 )
+    {
+        factory = new ConstraintFactory;
+    }
+    return factory;
+}
+
+Constraint * ConstraintFactory::createConstraint
+(   GameObject * object,
+    ConstraintDecider decider
+)
+{
+    Constraint * constraint = new Constraint ( object, decider );
+    m_constraints.insert ( constraint );
+    return constraint;
+}
+
+const set< Constraint* > & ConstraintFactory::constraints() const
+{
+    return m_constraints;
+}
+
+//////////////////////////////////////////////////////////////////////////////
 // Direction utilities.
 
 static bool validDirection ( Direction direction )
@@ -1035,15 +1125,37 @@ static string directionAsString ( Direction direction )
 
 static Direction directionFromString ( const string & str )
 {
-    string lcString;
-    // string.tolower by steam. Ugh.
-    for ( const char * chPtr = str.c_str(); *chPtr != '\0'; ++chPtr )
-    {
-        lcString.push_back ( tolower( *chPtr ) );
-    }
+    string lcString ( lowerCaseString ( str ) );
     return ( lcString == "n" || lcString == "north" ) ? North :
            ( lcString == "w" || lcString == "west" )  ? West :
            ( lcString == "s" || lcString == "south" ) ? South :
            ( lcString == "e" || lcString == "east" )  ? East :
                                                         Invalid;
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// Some helpers.
+
+// Should have map of name-to-function really;
+static void help()
+{
+    cerr << "Valid commands are:" << endl;
+    const vector<string> & validCommands = CommandFactory::singleton()->validCommands();
+    for ( vector<string>::const_iterator iter = validCommands.begin();
+          iter != validCommands.end(); ++iter
+        )
+    {
+        cerr << *iter << endl;
+    }
+}
+
+// string.tolower by steam. Ugh.
+static string lowerCaseString ( const string & str )
+{
+    string lcStr;
+    for ( const char * chPtr = str.c_str(); *chPtr != '\0'; ++chPtr )
+    {
+        lcStr.push_back ( tolower( *chPtr ) );
+    }
+    return lcStr;
 }
