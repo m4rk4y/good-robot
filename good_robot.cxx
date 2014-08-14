@@ -912,6 +912,12 @@ Table::Table ( int xmin, int ymin, int xmax, int ymax )
 
 void Table::setTable ( int xmin, int ymin, int xmax, int ymax )
 {
+    if ( xmin >= xmax || ymin >= ymax )
+    {
+        stringstream errorStream;
+        errorStream << "Invalid table limits [ ( " << xmin << ", " << ymin << " ), ( " << xmax << ", " << ymax << " ) ]";
+        throw exception ( errorStream.str().c_str() );
+    }
     static Table * table = 0;
     if ( table == 0 )
     {
