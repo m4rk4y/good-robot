@@ -6,6 +6,7 @@ REM I use unxutils.
 setlocal enabledelayedexpansion
 
 call :testIt test_input1.txt test_output1.txt
+call :testIt missing_test_input2.txt test_output2.txt
 call :testItFromStdin  test_input1.txt test_output1.txt
 goto :eof
 

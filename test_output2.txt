@@ -1,0 +1,12 @@
+Valid commands are:
+create
+table
+place
+move
+left
+right
+report
+remove
+help
+quit
+Caught exception: Failed to open file missing_test_input2.txt for reading

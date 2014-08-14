@@ -464,7 +464,7 @@ CommandStream::CommandStream ( const char * fileName )
         stringstream errorStream;
         errorStream << "Failed to open file "
                     << fileName << " for reading";
-        throw errorStream.str();
+        throw exception ( errorStream.str().c_str() );
     }
 }
 
@@ -791,7 +791,7 @@ void Robot::move()
         }
         default:    // impossible, it's an enum
         {
-            throw "impossible enum value";
+            throw exception ( "impossible enum value" );
             break;
         }
     }
@@ -1039,14 +1039,18 @@ void Interpreter::run()
         {
             cerr << "Exception: " << error << endl;
         }
-        catch ( InvalidCommandException & error )
+        catch ( const InvalidCommandException & error )
         {
             cerr << "Invalid command: " << error.what() << endl;
             help();
         }
-        catch ( InvalidDirectionException & error )
+        catch ( const InvalidDirectionException & error )
         {
             cerr << "Invalid direction " << error.directionString() << " for " << error.what() << endl;
+        }
+        catch ( const exception & error )
+        {
+            cerr << "Caught exception: " << error.what() << endl;
         }
         catch ( ... )
         {
