@@ -494,6 +494,8 @@ bool CommandStream::getCommand ( string & command ) const
             return false;
         }
         command = buffer;
+        // Trim trailing newline.
+        command.resize ( command.length()-1 );
         if ( ! command.empty() )
         {
             return true;
@@ -1083,7 +1085,7 @@ void Broadcaster::createCommandListener
 void Broadcaster::broadcast ( const Command & command )
 {
     GameObject * gameObject = command.gameObject();
-    for ( std::vector< CommandListener* >::iterator iter = m_commandListeners.begin();
+    for ( vector< CommandListener* >::iterator iter = m_commandListeners.begin();
           iter != m_commandListeners.end(); ++iter )
     {
         // Broadcast to all listeners or just the one that the Command
