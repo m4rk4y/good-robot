@@ -23,6 +23,7 @@ quit
 Table limits are: [ ( 0, 0 ), ( 10, 10 ) ]
 Robot Robbie is not on the table
 Robot Arthur is not on the table
+Caught exception: Invalid table limits [ ( 5, 10 ), ( -20, 40 ) ]
 Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
 Robot Robbie is not on the table
 Robot Arthur is not on the table
@@ -34,6 +35,7 @@ Robot Arthur is at x = 7, y = 39, facing East
 Robot Robbie is not on the table
 Robot Robbie is not on the table
 Ignoring attempt to move robot Arthur to invalid position
+Caught exception: Robot R2D2 already exists
 Table limits are: [ ( 5, 10 ), ( 20, 40 ) ]
 Robot Robbie is not on the table
 Robot Arthur is at x = 7, y = 39, facing North
