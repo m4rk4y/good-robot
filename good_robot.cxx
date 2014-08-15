@@ -890,6 +890,12 @@ RobotFactory * RobotFactory::singleton()
 
 Robot * RobotFactory::createRobot ( const string & robotName )
 {
+    if ( Robot::find ( robotName ) != 0 )
+    {
+        stringstream errorStream;
+        errorStream << "Robot " << robotName << " already exists";
+        throw exception ( errorStream.str().c_str() );
+    }
     Robot * robot = new Robot ( robotName );
     m_robots.insert ( pair< string, Robot* > ( robotName, robot ) );
     return robot;
