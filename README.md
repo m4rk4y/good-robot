@@ -5,17 +5,21 @@ Better solution to "toy robot" coding exercise.
 
 Working version in C++.
 
-Half-baked version in Ruby.
+Three-quarter-baked version in Ruby.
 
 Building
 --------
 
-compile, link. Nothing fancy.
+C++: compile, link. Nothing fancy.
+
+Ruby: completely stand-alone.
 
 Testing
 -------
 
 run_tests (currently just a Windows script)
+
+This only tests the C++ version. Input syntax and output messages are slightly different for C++ and Ruby versions.
 
 Synopsis
 --------
