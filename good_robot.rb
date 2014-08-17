@@ -4,6 +4,8 @@ module Direction
     EAST = 1
     SOUTH = 2
     WEST = 3
+    # want to have a way to raise an exception for invalid values
+    # Easiest with case rather than this hash
     def Direction.to_s ( arg )
         { INVALID => "Invalid",
           NORTH   => "North",
@@ -29,7 +31,8 @@ module Constraint
     end
     def checkConstraints( *args )
         # returns true if all the constrainers say ok
-        @@constrainers.all?{ | key, value | key.send( value, args ) }
+        # should filter out self at this point though
+        @@constrainers.all?{ | key, value | key.send( value, self, args ) }
     end
 end
 
@@ -49,6 +52,8 @@ class Game
         #
         # <verb> must be a known command and possibly one that goes via the
         # generic forwarding.
+        #
+        # This isn't using a Broadcaster/Listener mechanism yet.
         #
         verb, rest = line.split( /[ :]+/, 2 )
         if robots.keys.include?( verb )
@@ -85,46 +90,6 @@ class Game
         end
     end
 
-#     def place( robot: nil, **other_args )
-#         if robot
-#             robot.place( *other_args[:args] )
-#         else
-#             robots.values.each { |robot| robot.place( *other_args[:args] ) }
-#         end
-#     end
-#
-#     def move( robot: nil, **other_args )
-#         if robot
-#             robot.move( *other_args[:args] )
-#         else
-#             robots.values.each { |robot| robot.move( *other_args[:args] ) }
-#         end
-#     end
-#
-#     def left( robot: nil, **other_args )
-#         if robot
-#             robot.left( *other_args[:args] )
-#         else
-#             robots.values.each { |robot| robot.left( *other_args[:args] ) }
-#         end
-#     end
-#
-#     def right( robot: nil, **other_args )
-#         if robot
-#             robot.right( *other_args[:args] )
-#         else
-#             robots.values.each { |robot| robot.right( *other_args[:args] ) }
-#         end
-#     end
-#
-#     def remove( robot: nil, **other_args )
-#         if robot
-#             robot.remove( *other_args[:args] )
-#         else
-#             robots.values.each { |robot| robot.remove( *other_args[:args] ) }
-#         end
-#     end
-
     def report( **other_args )
         @table.report
         robots.values.each { |robot| robot.report }
@@ -145,13 +110,18 @@ class Table
     include Constraint
     attr_reader :xmin, :ymin, :xmax, :ymax
     def initialize( xmin, ymin, xmax, ymax )
-        puts "create a table"
         set( xmin, ymin, xmax, ymax )
         addConstrainer( self, :constrain )
     end
-    def constrain( args )
-        puts "Checking #{args} for table"
-        true
+    def constrain( *args )
+        puts "Table checking #{args}"
+        actor = args[0]
+        new_xpos = args[1][0].to_i
+        new_ypos = args[1][1].to_i
+        ( self === actor ||
+          # can I say a <= b < c?
+          ( @xmin <= new_xpos && new_xpos < @xmax && @ymin <= new_ypos && new_ypos < @ymax )
+        )
     end
     def set ( xmin, ymin, xmax, ymax )
         # Harsh... nothing catches this yet.
@@ -173,7 +143,6 @@ class Robot
     include Constraint
     attr_reader :name, :xpos, :ypos, :direction, :on_table
     def initialize( name )
-        puts "create a robot called #{name}"
         @name = name
         @xpos = -1
         @ypos = -1
@@ -181,25 +150,45 @@ class Robot
         @on_table = false
         addConstrainer( self, :constrain )
     end
-    def constrain( args )
-        puts "Checking #{args} for Robot #{name}"
-        true
+    def constrain( *args )
+        puts "Robot #{name} checking #{args}"
+        actor = args[0]
+        new_xpos = args[1][0].to_i
+        new_ypos = args[1][1].to_i
+        ( self === actor || ! @on_table || @xpos != new_xpos || @ypos != new_ypos )
     end
-    def place( xpos, ypos, direction )
-        # Ensure not off table, ensure not colliding with another robot
-        @xpos = xpos
-        @ypos = ypos
-        @direction = Direction.from_s direction.upcase
-        @on_table = true
+    def place( new_xpos, new_ypos, direction )
+        if checkConstraints( new_xpos, new_ypos )
+            @xpos = new_xpos.to_i
+            @ypos = new_ypos.to_i
+            @direction = Direction.from_s direction.upcase
+            @on_table = true
+        else
+            puts "Robot #{name} not allowed to be placed at ( #{new_xpos}, #{new_ypos} )"
+        end
     end
     def move
-        puts "dummy move"
-        # Ensure not off table, ensure not colliding with another robot
-        # checker should not care if checking against self
-        if checkConstraints( 42, 43 )
-            puts "check ok"
+        if ! @on_table
+            puts "Cannot move Robot #{name} when not on table"
+            return
+        end
+        new_xpos = @xpos
+        new_ypos = @ypos
+        case @direction
+        when Direction::NORTH
+            new_ypos = new_ypos + 1
+        when Direction::EAST
+            new_xpos = new_xpos + 1
+        when Direction::SOUTH
+            new_ypos = new_ypos - 1
+        when Direction::WEST
+            new_xpos = new_xpos - 1
+        end
+        if checkConstraints( new_xpos, new_ypos )
+            @xpos = new_xpos
+            @ypos = new_ypos
         else
-            puts "Check failed"
+            puts "Robot #{name} not allowed to be moved to ( #{new_xpos}, #{new_ypos} )"
         end
     end
     def left
@@ -212,8 +201,7 @@ class Robot
                          Direction::EAST
                      when Direction::WEST
                          Direction::SOUTH
-                     else # ought not to change Invalid, but for now...
-                         Direction::NORTH
+                     else # leave Invalid unchanged
                      end
     end
     def right
@@ -226,8 +214,7 @@ class Robot
                          Direction::WEST
                      when Direction::WEST
                          Direction::NORTH
-                     else # ought not to change Invalid, but for now...
-                         Direction::NORTH
+                     else # leave Invalid unchanged
                      end
     end
     def remove
@@ -254,7 +241,8 @@ game.table = Table.new( 0, 0, 10, 10 )
 if ARGV.empty?
     game.help
     while line = gets
-        game.interpret ( line.chomp )
+        line = line.chomp
+        game.interpret ( line ) unless line.empty?
     end
 else
     ARGF.readlines.each { |line| interpret line }
