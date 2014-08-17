@@ -1,7 +1,11 @@
 good-robot
 ==========
 
-Better solution to "toy robot" coding exercise (still in C++ though)
+Better solution to "toy robot" coding exercise.
+
+Working version in C++.
+
+Half-baked version in Ruby.
 
 Building
 --------
