@@ -114,7 +114,6 @@ class Table
         addConstrainer( self, :constrain )
     end
     def constrain( *args )
-        puts "Table checking #{args}"
         actor = args[0]
         new_xpos = args[1][0].to_i
         new_ypos = args[1][1].to_i
@@ -151,7 +150,6 @@ class Robot
         addConstrainer( self, :constrain )
     end
     def constrain( *args )
-        puts "Robot #{name} checking #{args}"
         actor = args[0]
         new_xpos = args[1][0].to_i
         new_ypos = args[1][1].to_i
@@ -164,7 +162,7 @@ class Robot
             @direction = Direction.from_s direction.upcase
             @on_table = true
         else
-            puts "Robot #{name} not allowed to be placed at ( #{new_xpos}, #{new_ypos} )"
+            puts "Cannot place Robot #{name} at ( #{new_xpos}, #{new_ypos} )"
         end
     end
     def move
@@ -188,7 +186,7 @@ class Robot
             @xpos = new_xpos
             @ypos = new_ypos
         else
-            puts "Robot #{name} not allowed to be moved to ( #{new_xpos}, #{new_ypos} )"
+            puts "Cannot move Robot #{name} to ( #{new_xpos}, #{new_ypos} )"
         end
     end
     def left
@@ -240,8 +238,9 @@ game.table = Table.new( 0, 0, 10, 10 )
 # Ugly, but I want STDIN to be interactive.
 if ARGV.empty?
     game.help
-    while line = gets
-        line = line.chomp
+    while true
+        printf "? "
+        line = gets.chomp
         game.interpret ( line ) unless line.empty?
     end
 else
