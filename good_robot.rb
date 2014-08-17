@@ -37,11 +37,11 @@ module Constraint
 end
 
 class Game
-    attr_accessor :validCommands, :forwarded, :table, :robots
+    attr_accessor :forwardedCommands, :specificCommands, :table, :robots
     def initialize
         # can't help thinking this is too early
-        @validCommands = []
-        @forwarded = []
+        @forwardedCommands = []
+        @specificCommands = []
         @table = nil
         @robots = {}
     end
@@ -60,17 +60,13 @@ class Game
             robot = robots[verb]
             verb, rest = rest.split( /[ ]+/, 2 )
         end
-        if validCommands.include?( verb )
-            qualifiers = rest.split( /[ ]/ ) if rest
-            if forwarded.include?( verb )
-                doSomething( func:verb, robot:robot, args:qualifiers )
-            elsif respond_to?( verb )
-                send verb, robot:robot, args:qualifiers
-            else
-                puts "Don't know how to #{verb}"    # twice? Surely not
-            end
+        qualifiers = rest.split( /[ ]/ ) if rest
+        if forwardedCommands.include?( verb )
+            doSomething( func:verb, robot:robot, args:qualifiers )
+        elsif ( specificCommands.include?( verb ) && respond_to?( verb ) )
+            send verb, robot:robot, args:qualifiers
         else
-            puts "Don't know how to #{verb}"        # twice? Surely not
+            puts "Don't know how to #{verb}"
         end
     end
 
@@ -97,7 +93,9 @@ class Game
 
     def help( **other_args )
         puts "Valid commands are:"
-        puts validCommands.join "\n"
+        # Yeah I could concatenate the arrays and do one join, but what's the point?
+        puts forwardedCommands.join "\n"
+        puts specificCommands.join "\n"
     end
 
     def quit( **other_args )
@@ -230,9 +228,9 @@ end
 # Start here.
 
 game = Game.new
-game.validCommands = [ "create", "table", "place", "move", "left", "right", "report", "remove", "help", "quit" ]
-# Horrible, these are the generic doSomething ones...
-game.forwarded = [ "place", "move", "left", "right", "remove" ]
+# I really don't like this split...
+game.specificCommands = [ "create", "table", "report", "help", "quit" ]
+game.forwardedCommands = [ "place", "move", "left", "right", "remove" ]
 game.table = Table.new( 0, 0, 10, 10 )
 [ "Robbie", "Arthur" ].each { |name| game.robots[name] = Robot.new( name ) }
 # Ugly, but I want STDIN to be interactive.
