@@ -17,9 +17,16 @@ Ruby: completely stand-alone.
 Testing
 -------
 
+C++:
+
 run_tests (currently just a Windows script)
 
-This only tests the C++ version. Input syntax and output messages are slightly different for C++ and Ruby versions.
+Ruby:
+
+( good_robot.rb test_input1.txt 2>&1 ) > test_output.txt
+diff test_output.txt test_output1_rb.txt
+
+Note that input syntax and output messages are slightly different for C++ and Ruby versions.
 
 Synopsis
 --------
