@@ -5,11 +5,11 @@ module Direction
     SOUTH = 2
     WEST = 3
     def Direction.to_s ( arg )
-        { INVALID => "Invalid",
-          NORTH   => "North",
-          EAST    => "East",
-          SOUTH   => "South",
-          WEST    => "West"
+        { INVALID => :Invalid,
+          NORTH   => :North,
+          EAST    => :East,
+          SOUTH   => :South,
+          WEST    => :West
         }[arg]
     end
     # We want to have a way to raise an exception for invalid values.
@@ -126,8 +126,7 @@ class Table
         actor = args[0]
         new_xpos = args[1][0].to_i
         new_ypos = args[1][1].to_i
-        # can I say a <= b < c?
-        @xmin <= new_xpos && new_xpos < @xmax && @ymin <= new_ypos && new_ypos < @ymax
+        ( @xmin ... @xmax ).include?( new_xpos ) && ( @ymin ... @ymax ).include?( new_ypos )
     end
     def set ( xmin, ymin, xmax, ymax )
         xmin = xmin.to_i
@@ -188,6 +187,7 @@ class Robot
         end
         new_xpos = @xpos
         new_ypos = @ypos
+        # Could do this with two { Direction, increment } hashes.
         case @direction
         when Direction::NORTH
             new_ypos = new_ypos + 1
