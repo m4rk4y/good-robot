@@ -49,6 +49,7 @@ class Game
     end
 
     def interpret( line )
+        return if line.empty?
         # Line can be either <verb> [ <args> ]
         # or <known-robot> <verb> [ <args> ]
         #
@@ -59,12 +60,12 @@ class Game
         # should help with the auto-registration and the rejection of invalid
         # commands.
         #
-        verb, rest = line.split( /[ :]+/, 2 )
+        verb, rest = line.split( /[ :,]+/, 2 )
         if @robots.keys.include?( verb )
             robot = @robots[verb]
-            verb, rest = rest.split( /[ ]+/, 2 )
+            verb, rest = rest.split( /[ ,]+/, 2 )
         end
-        qualifiers = rest.split( /[ ]/ ) if rest
+        qualifiers = rest.split( /[ ,]+/ ) if rest
         if @forwardedCommands.include?( verb )
             forward( func:verb, robot:robot, args:qualifiers )
         elsif ( @specificCommands.include?( verb ) && respond_to?( verb ) )
@@ -123,10 +124,13 @@ class Table
         @xmin <= new_xpos && new_xpos < @xmax && @ymin <= new_ypos && new_ypos < @ymax
     end
     def set ( xmin, ymin, xmax, ymax )
-        # Harsh... nothing catches this yet.
-        if xmin >= xmax || ymin >= ymax
-            raise ArgumentError,
-                "Invalid table co-ordinates [ ( #{xmin}, #{ymin} ), ( #{xmax}, #{ymax} ) ]"
+        xmin = xmin.to_i
+        xmax = xmax.to_i
+        ymin = ymin.to_i
+        ymax = ymax.to_i
+        if ( xmin >= xmax || ymin >= ymax )
+            puts "Invalid table co-ordinates [ ( #{xmin}, #{ymin} ), ( #{xmax}, #{ymax} ) ]"
+            return
         end
         @xmin = xmin
         @ymin = ymin
@@ -235,9 +239,8 @@ if ARGV.empty?
     game.help
     while true
         printf "? "
-        line = gets.chomp
-        game.interpret ( line ) unless line.empty?
+        game.interpret ( gets.chomp )
     end
 else
-    ARGF.readlines.each { |line| interpret line }
+    ARGF.readlines.each { |line| game.interpret line.chomp }
 end
