@@ -1,0 +1,59 @@
+Valid commands are:
+place
+move
+left
+right
+remove
+create
+table
+report
+help
+quit
+Table is at [ ( 0, 0 ), ( 10, 10 ) ]
+Robbie is not on the table
+Arthur is not on the table
+Invalid table co-ordinates [ ( 5, 10 ), ( -20, 40 ) ]
+Table is at [ ( 5, 10 ), ( 20, 40 ) ]
+Robbie is not on the table
+Arthur is not on the table
+Cannot place Robot Arthur at ( 0, 0 )
+Invalid direction q
+Table is at [ ( 5, 10 ), ( 20, 40 ) ]
+Robbie is not on the table
+Arthur is at ( 7, 39 ) facing East
+Cannot turn Robot Robbie left when not on table
+Cannot move Robot Robbie when not on table
+Cannot move Robot Arthur to ( 7, 40 )
+Robot R2D2 already exists
+Table is at [ ( 5, 10 ), ( 20, 40 ) ]
+Robbie is not on the table
+Arthur is at ( 7, 39 ) facing North
+R2D2 is at ( 5, 12 ) facing West
+Cannot move Robot Robbie when not on table
+Cannot move Robot Arthur to ( 7, 40 )
+Cannot move Robot R2D2 to ( 4, 12 )
+Table is at [ ( 5, 10 ), ( 20, 40 ) ]
+Robbie is not on the table
+Arthur is at ( 7, 39 ) facing North
+R2D2 is not on the table
+Cannot turn Robot Robbie right when not on table
+Cannot turn Robot R2D2 right when not on table
+Table is at [ ( 5, 10 ), ( 20, 40 ) ]
+Robbie is not on the table
+Arthur is at ( 7, 39 ) facing East
+R2D2 is not on the table
+Cannot place Robot Robbie at ( 0, 0 )
+Cannot place Robot Arthur at ( 0, 0 )
+Cannot place Robot R2D2 at ( 0, 0 )
+Cannot place Robot Arthur at ( 10, 30 )
+Cannot place Robot R2D2 at ( 10, 30 )
+Table is at [ ( 5, 10 ), ( 20, 40 ) ]
+Robbie is at ( 10, 30 ) facing West
+Arthur is at ( 7, 39 ) facing East
+R2D2 is not on the table
+Cannot move Robot R2D2 when not on table
+Table is at [ ( 5, 10 ), ( 20, 40 ) ]
+Robbie is at ( 9, 30 ) facing West
+Arthur is at ( 8, 39 ) facing East
+R2D2 is not on the table
+Bye!

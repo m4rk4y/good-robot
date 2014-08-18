@@ -76,7 +76,13 @@ class Game
     end
 
     def create( robot: nil, **other_args )
-        other_args[:args].each { |name| @robots[name] = Robot.new( name ) }
+        other_args[:args].each do |name|
+            if @robots.keys.include? name
+                puts "Robot #{name} already exists"
+            else
+                @robots[name] = Robot.new( name )
+            end
+        end
     end
 
     def table( **other_args )
@@ -154,12 +160,18 @@ class Robot
         addConstrainer( self, :constrain )
     end
     def constrain( *args )
+        # Named arguments would help here.
         actor = args[0]
         new_xpos = args[1][0].to_i
         new_ypos = args[1][1].to_i
         ! @on_table || @xpos != new_xpos || @ypos != new_ypos
     end
     def place( new_xpos, new_ypos, direction )
+        new_direction = Direction.from_s direction.upcase
+        unless new_direction
+            puts "Invalid direction #{direction}"
+            return
+        end
         if checkConstraints( new_xpos, new_ypos )
             @xpos = new_xpos.to_i
             @ypos = new_ypos.to_i
@@ -194,6 +206,10 @@ class Robot
         end
     end
     def left
+        if ! @on_table
+            puts "Cannot turn Robot #{name} left when not on table"
+            return
+        end
         @direction = case @direction
                      when Direction::NORTH
                          Direction::WEST
@@ -207,6 +223,10 @@ class Robot
                      end
     end
     def right
+        if ! @on_table
+            puts "Cannot turn Robot #{name} right when not on table"
+            return
+        end
         @direction = case @direction
                      when Direction::NORTH
                          Direction::EAST
@@ -234,13 +254,20 @@ end
 # Start here.
 
 game = Game.new
-# Ugly, but I want STDIN to be interactive.
-if ARGV.empty?
+# Ugly, but I want tty STDIN to be interactive.
+if ( ARGV.empty? && STDIN.tty? )
     game.help
+    # Relying on "quit" to do an exit...
     while true
         printf "? "
         game.interpret ( gets.chomp )
     end
 else
-    ARGF.readlines.each { |line| game.interpret line.chomp }
+    # This works with <script> <input-file>
+    # but *not* with <script> < <input-file> (i.e. redirected STDIN),
+    # despite what all the web pages say. Maybe it's a Windows-specific bug?
+    # I can't find a way to get Ruby to read redirected STDIN at all :-(
+    ARGF.each { |line|
+        game.interpret line.chomp
+    }
 end
