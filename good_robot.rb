@@ -21,6 +21,36 @@ module Direction
           "W" => WEST
         }[arg]
     end
+    def Direction.left ( arg )
+        { INVALID => INVALID,
+          NORTH   => WEST,
+          EAST    => NORTH,
+          SOUTH   => EAST,
+          WEST    => NORTH
+        }[arg]
+    end
+    def Direction.right ( arg )
+        { INVALID => INVALID,
+          NORTH   => EAST,
+          EAST    => SOUTH,
+          SOUTH   => WEST,
+          WEST    => SOUTH
+        }[arg]
+    end
+    def Direction.move ( direction, xpos, ypos )
+        # Could do this with two { Direction, increment } hashes.
+        case direction
+        when Direction::NORTH
+            ypos = ypos + 1
+        when Direction::EAST
+            xpos = xpos + 1
+        when Direction::SOUTH
+            ypos = ypos - 1
+        when Direction::WEST
+            xpos = xpos - 1
+        end
+    [ xpos, ypos ]
+    end
 end
 
 module Constraint
@@ -185,19 +215,7 @@ class Robot
             puts "Cannot move Robot #{name} when not on table"
             return
         end
-        new_xpos = @xpos
-        new_ypos = @ypos
-        # Could do this with two { Direction, increment } hashes.
-        case @direction
-        when Direction::NORTH
-            new_ypos = new_ypos + 1
-        when Direction::EAST
-            new_xpos = new_xpos + 1
-        when Direction::SOUTH
-            new_ypos = new_ypos - 1
-        when Direction::WEST
-            new_xpos = new_xpos - 1
-        end
+        new_xpos, new_ypos = Direction.move( @direction, @xpos, @ypos )
         if checkConstraints( new_xpos, new_ypos )
             @xpos = new_xpos
             @ypos = new_ypos
@@ -210,34 +228,14 @@ class Robot
             puts "Cannot turn Robot #{name} left when not on table"
             return
         end
-        @direction = case @direction
-                     when Direction::NORTH
-                         Direction::WEST
-                     when Direction::EAST
-                         Direction::NORTH
-                     when Direction::SOUTH
-                         Direction::EAST
-                     when Direction::WEST
-                         Direction::SOUTH
-                     else # leave Invalid unchanged
-                     end
+        @direction = Direction.left ( @direction )
     end
     def right
         if ! @on_table
             puts "Cannot turn Robot #{name} right when not on table"
             return
         end
-        @direction = case @direction
-                     when Direction::NORTH
-                         Direction::EAST
-                     when Direction::EAST
-                         Direction::SOUTH
-                     when Direction::SOUTH
-                         Direction::WEST
-                     when Direction::WEST
-                         Direction::NORTH
-                     else # leave Invalid unchanged
-                     end
+        @direction = Direction.right ( @direction )
     end
     def remove
         @on_table = false
@@ -267,7 +265,5 @@ else
     # but *not* with <script> < <input-file> (i.e. redirected STDIN),
     # despite what all the web pages say. Maybe it's a Windows-specific bug?
     # I can't find a way to get Ruby to read redirected STDIN at all :-(
-    ARGF.each { |line|
-        game.interpret line.chomp
-    }
+    ARGF.each { |line| game.interpret line.chomp }
 end
