@@ -44,6 +44,7 @@ class Game
         @specificCommands = [ "create", "table", "report", "help", "quit" ]
         @forwardedCommands = [ "place", "move", "left", "right", "remove" ]
         @table = Table.new( 0, 0, 10, 10 )
+        @robots = {}
         [ "Robbie", "Arthur" ].each { |name| @robots[name] = Robot.new( name ) }
     end
 
@@ -74,7 +75,7 @@ class Game
     end
 
     def create( robot: nil, **other_args )
-        other_args[:args].each { |name| robots[name] = Robot.new( name ) }
+        other_args[:args].each { |name| @robots[name] = Robot.new( name ) }
     end
 
     def table( **other_args )
