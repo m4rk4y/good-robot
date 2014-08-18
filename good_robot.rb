@@ -4,8 +4,6 @@ module Direction
     EAST = 1
     SOUTH = 2
     WEST = 3
-    # want to have a way to raise an exception for invalid values
-    # Easiest with case rather than this hash
     def Direction.to_s ( arg )
         { INVALID => "Invalid",
           NORTH   => "North",
@@ -14,6 +12,8 @@ module Direction
           WEST    => "West"
         }[arg]
     end
+    # We want to have a way to raise an exception for invalid values.
+    # Easiest with case rather than this hash, which simply returns nil.
     def Direction.from_s ( arg )
         { "N" => NORTH,
           "E" => EAST,
@@ -30,20 +30,21 @@ module Constraint
         @@constrainers[object] = function
     end
     def checkConstraints( *args )
-        # returns true if all the constrainers say ok
-        # should filter out self at this point though
-        @@constrainers.all?{ | key, value | key.send( value, self, args ) }
+        # Returns true if all the constrainers say ok.
+        # We filter out self at this point.
+        @@constrainers.all?{ | key, value | key === self || key.send( value, self, args ) }
     end
 end
 
 class Game
-    attr_accessor :forwardedCommands, :specificCommands, :table, :robots
     def initialize
-        # can't help thinking this is too early
-        @forwardedCommands = []
-        @specificCommands = []
-        @table = nil
-        @robots = {}
+        @listeners = []
+        # I really don't like this split... game and robots and table should
+        # auto-register what they respond to.
+        @specificCommands = [ "create", "table", "report", "help", "quit" ]
+        @forwardedCommands = [ "place", "move", "left", "right", "remove" ]
+        @table = Table.new( 0, 0, 10, 10 )
+        [ "Robbie", "Arthur" ].each { |name| @robots[name] = Robot.new( name ) }
     end
 
     def interpret( line )
@@ -53,17 +54,19 @@ class Game
         # <verb> must be a known command and possibly one that goes via the
         # generic forwarding.
         #
-        # This isn't using a Broadcaster/Listener mechanism yet.
+        # This isn't using a Broadcaster/Listener mechanism yet. Adding that
+        # should help with the auto-registration and the rejection of invalid
+        # commands.
         #
         verb, rest = line.split( /[ :]+/, 2 )
-        if robots.keys.include?( verb )
-            robot = robots[verb]
+        if @robots.keys.include?( verb )
+            robot = @robots[verb]
             verb, rest = rest.split( /[ ]+/, 2 )
         end
         qualifiers = rest.split( /[ ]/ ) if rest
-        if forwardedCommands.include?( verb )
-            doSomething( func:verb, robot:robot, args:qualifiers )
-        elsif ( specificCommands.include?( verb ) && respond_to?( verb ) )
+        if @forwardedCommands.include?( verb )
+            forward( func:verb, robot:robot, args:qualifiers )
+        elsif ( @specificCommands.include?( verb ) && respond_to?( verb ) )
             send verb, robot:robot, args:qualifiers
         else
             puts "Don't know how to #{verb}"
@@ -78,24 +81,24 @@ class Game
         @table.set( *other_args[:args] )
     end
 
-    def doSomething( func: nil, robot: nil, **other_args )
+    def forward( func: nil, robot: nil, **other_args )
         if robot
             robot.send( func, *other_args[:args] )
         else
-            robots.values.each { |robot| robot.send( func, *other_args[:args] ) }
+            @robots.values.each { |robot| robot.send( func, *other_args[:args] ) }
         end
     end
 
     def report( **other_args )
         @table.report
-        robots.values.each { |robot| robot.report }
+        @robots.values.each { |robot| robot.report }
     end
 
     def help( **other_args )
         puts "Valid commands are:"
         # Yeah I could concatenate the arrays and do one join, but what's the point?
-        puts forwardedCommands.join "\n"
-        puts specificCommands.join "\n"
+        puts @forwardedCommands.join "\n"
+        puts @specificCommands.join "\n"
     end
 
     def quit( **other_args )
@@ -115,10 +118,8 @@ class Table
         actor = args[0]
         new_xpos = args[1][0].to_i
         new_ypos = args[1][1].to_i
-        ( self === actor ||
-          # can I say a <= b < c?
-          ( @xmin <= new_xpos && new_xpos < @xmax && @ymin <= new_ypos && new_ypos < @ymax )
-        )
+        # can I say a <= b < c?
+        @xmin <= new_xpos && new_xpos < @xmax && @ymin <= new_ypos && new_ypos < @ymax
     end
     def set ( xmin, ymin, xmax, ymax )
         # Harsh... nothing catches this yet.
@@ -151,7 +152,7 @@ class Robot
         actor = args[0]
         new_xpos = args[1][0].to_i
         new_ypos = args[1][1].to_i
-        ( self === actor || ! @on_table || @xpos != new_xpos || @ypos != new_ypos )
+        ! @on_table || @xpos != new_xpos || @ypos != new_ypos
     end
     def place( new_xpos, new_ypos, direction )
         if checkConstraints( new_xpos, new_ypos )
@@ -228,11 +229,6 @@ end
 # Start here.
 
 game = Game.new
-# I really don't like this split...
-game.specificCommands = [ "create", "table", "report", "help", "quit" ]
-game.forwardedCommands = [ "place", "move", "left", "right", "remove" ]
-game.table = Table.new( 0, 0, 10, 10 )
-[ "Robbie", "Arthur" ].each { |name| game.robots[name] = Robot.new( name ) }
 # Ugly, but I want STDIN to be interactive.
 if ARGV.empty?
     game.help
