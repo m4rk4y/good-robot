@@ -56,13 +56,13 @@ end
 module Constraint
     @@constrainers = nil
     def addConstrainer ( object, function )
-        @@constrainers = {} unless @@constrainers
+        @@constrainers ||= {}
         @@constrainers[object] = function
     end
     def checkConstraints( *args )
         # Returns true if all the constrainers say ok.
         # We filter out self at this point.
-        @@constrainers.all?{ | key, value | key === self || key.send( value, self, args ) }
+        @@constrainers.all?{ | key, value | key == self || key.send( value, self, args ) }
     end
 end
 
@@ -129,7 +129,7 @@ class Game
 
     def report( **other_args )
         @table.report
-        @robots.values.each { |robot| robot.report }
+        @robots.values.each( &:report )
     end
 
     def help( **other_args )
@@ -154,23 +154,17 @@ class Table
     end
     def constrain( *args )
         actor = args[0]
-        new_xpos = args[1][0].to_i
-        new_ypos = args[1][1].to_i
+        new_xpos, new_ypos = args[1][0].to_i, args[1][1].to_i
         ( @xmin ... @xmax ).include?( new_xpos ) && ( @ymin ... @ymax ).include?( new_ypos )
     end
     def set ( xmin, ymin, xmax, ymax )
-        xmin = xmin.to_i
-        xmax = xmax.to_i
-        ymin = ymin.to_i
-        ymax = ymax.to_i
-        if ( xmin >= xmax || ymin >= ymax )
+        xmin, xmax, ymin, ymax = xmin.to_i, xmax.to_i, ymin.to_i, ymax.to_i
+        if ( xmin < xmax && ymin < ymax )
+            @xmin, @ymin, @xmax, @ymax = xmin, ymin, xmax, ymax
+            report
+        else
             puts "Invalid table co-ordinates [ ( #{xmin}, #{ymin} ), ( #{xmax}, #{ymax} ) ]"
-            return
         end
-        @xmin = xmin
-        @ymin = ymin
-        @xmax = xmax
-        @ymax = ymax
     end
     def report
         puts "Table is at [ ( #{xmin}, #{ymin} ), ( #{xmax}, #{ymax} ) ]"
@@ -182,63 +176,65 @@ class Robot
     attr_reader :name, :xpos, :ypos, :direction, :on_table
     def initialize( name )
         @name = name
-        @xpos = -1
-        @ypos = -1
+        @xpos, @ypos = -1, -1
         @direction = Direction::INVALID
         @on_table = false
         addConstrainer( self, :constrain )
+        report
     end
     def constrain( *args )
         # Named arguments would help here.
         actor = args[0]
-        new_xpos = args[1][0].to_i
-        new_ypos = args[1][1].to_i
+        new_xpos, new_ypos = args[1][0].to_i, args[1][1].to_i
         ! @on_table || @xpos != new_xpos || @ypos != new_ypos
     end
     def place( new_xpos, new_ypos, direction )
         new_direction = Direction.from_s direction.upcase
-        unless new_direction
-            puts "Invalid direction #{direction}"
-            return
-        end
-        if checkConstraints( new_xpos, new_ypos )
-            @xpos = new_xpos.to_i
-            @ypos = new_ypos.to_i
-            @direction = Direction.from_s direction.upcase
-            @on_table = true
+        if new_direction
+            if checkConstraints( new_xpos, new_ypos )
+                @xpos, @ypos = new_xpos.to_i, new_ypos.to_i
+                @direction = Direction.from_s direction.upcase
+                @on_table = true
+                report
+            else
+                puts "Cannot place Robot #{name} at ( #{new_xpos}, #{new_ypos} )"
+            end
         else
-            puts "Cannot place Robot #{name} at ( #{new_xpos}, #{new_ypos} )"
+            puts "Invalid direction #{direction}"
         end
     end
     def move
-        if ! @on_table
-            puts "Cannot move Robot #{name} when not on table"
-            return
-        end
-        new_xpos, new_ypos = Direction.move( @direction, @xpos, @ypos )
-        if checkConstraints( new_xpos, new_ypos )
-            @xpos = new_xpos
-            @ypos = new_ypos
+        if @on_table
+            new_xpos, new_ypos = Direction.move( @direction, @xpos, @ypos )
+            if checkConstraints( new_xpos, new_ypos )
+                @xpos, @ypos = new_xpos, new_ypos
+                report
+            else
+                puts "Cannot move Robot #{name} to ( #{new_xpos}, #{new_ypos} )"
+            end
         else
-            puts "Cannot move Robot #{name} to ( #{new_xpos}, #{new_ypos} )"
+            puts "Cannot move Robot #{name} when not on table"
         end
     end
     def left
-        if ! @on_table
+        if @on_table
+            @direction = Direction.left ( @direction )
+            report
+        else
             puts "Cannot turn Robot #{name} left when not on table"
-            return
         end
-        @direction = Direction.left ( @direction )
     end
     def right
-        if ! @on_table
+        if @on_table
+            @direction = Direction.right ( @direction )
+            report
+        else
             puts "Cannot turn Robot #{name} right when not on table"
-            return
         end
-        @direction = Direction.right ( @direction )
     end
     def remove
         @on_table = false
+        report
     end
     def report
         if @on_table
@@ -263,7 +259,8 @@ if ( ARGV.empty? && STDIN.tty? )
 else
     # This works with <script> <input-file>
     # but *not* with <script> < <input-file> (i.e. redirected STDIN),
-    # despite what all the web pages say. Maybe it's a Windows-specific bug?
-    # I can't find a way to get Ruby to read redirected STDIN at all :-(
+    # despite what all the web pages say. Well it fails only Windows XP as far
+    # as I can tell, and I can't find a way to get Ruby to read redirected
+    # STDIN at all :-(
     ARGF.each { |line| game.interpret line.chomp }
 end
