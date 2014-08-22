@@ -1,0 +1,38 @@
+help
+report
+table 5, 10 20 40
+table 5, 10 -20 40
+
+
+report
+Arthur: place 0 0 w
+Arthur: place 0 0 q
+Arthur: place 5 39 e
+Arthur: move
+Arthur: move
+report
+left
+left
+left
+left
+left
+move
+create R2D2
+create R2D2
+R2D2: place 5 12 w
+report
+move
+R2D2: remove
+report
+right
+right
+right
+right
+right
+report
+place 0 0 w
+place 10 30 w
+report
+move
+report
+quit

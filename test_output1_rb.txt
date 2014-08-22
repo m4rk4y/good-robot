@@ -30,6 +30,14 @@ Robbie is not on the table
 Arthur is at ( 7, 39 ) facing East
 Cannot turn Robot Robbie left when not on table
 Arthur is at ( 7, 39 ) facing North
+Cannot turn Robot Robbie left when not on table
+Arthur is at ( 7, 39 ) facing West
+Cannot turn Robot Robbie left when not on table
+Arthur is at ( 7, 39 ) facing South
+Cannot turn Robot Robbie left when not on table
+Arthur is at ( 7, 39 ) facing East
+Cannot turn Robot Robbie left when not on table
+Arthur is at ( 7, 39 ) facing North
 Cannot move Robot Robbie when not on table
 Cannot move Robot Arthur to ( 7, 40 )
 R2D2 is not on the table
@@ -47,6 +55,18 @@ Table is at [ ( 5, 10 ), ( 20, 40 ) ]
 Robbie is not on the table
 Arthur is at ( 7, 39 ) facing North
 R2D2 is not on the table
+Cannot turn Robot Robbie right when not on table
+Arthur is at ( 7, 39 ) facing East
+Cannot turn Robot R2D2 right when not on table
+Cannot turn Robot Robbie right when not on table
+Arthur is at ( 7, 39 ) facing South
+Cannot turn Robot R2D2 right when not on table
+Cannot turn Robot Robbie right when not on table
+Arthur is at ( 7, 39 ) facing West
+Cannot turn Robot R2D2 right when not on table
+Cannot turn Robot Robbie right when not on table
+Arthur is at ( 7, 39 ) facing North
+Cannot turn Robot R2D2 right when not on table
 Cannot turn Robot Robbie right when not on table
 Arthur is at ( 7, 39 ) facing East
 Cannot turn Robot R2D2 right when not on table
