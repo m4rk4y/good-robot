@@ -8,19 +8,19 @@ Three-quarter-baked version in Ruby.
 Testing
 -------
 
-( good_robot.rb test_input1.txt 2>&1 ) > test_output.txt
-diff test_output.txt test_output1_rb.txt
+    % ( good_robot.rb test_input1.txt 2>&1 ) > test_output.txt
+    % diff test_output.txt test_output1_rb.txt
 
 Note that input syntax and output messages are slightly different for C++ and Ruby versions.
 
 Synopsis
 --------
 
-    good_robot
+    % good_robot
 
 or
 
-    good_robot <input-file> [ <input-file>, ... ]
+    % good_robot <input-file> [ <input-file>, ... ]
 
 Accepts commands (from stdin or named input files):
 
@@ -35,7 +35,7 @@ Accepts commands (from stdin or named input files):
     quit
     help
 
-Commands are case-insensitive. Robot names are case-sensitive.
+Commands are *case-insensitive*. Robot names are *case-sensitive*.
 
 Arguments (for "table" and "place") can be comma- or space-delimited.
 
