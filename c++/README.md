@@ -13,18 +13,20 @@ Compile, link. Nothing fancy.
 Testing
 -------
 
-run_tests (currently just a Windows script)
+    % run_tests
+
+(currently just a Windows script).
 
 Note that input syntax and output messages are slightly different for C++ and Ruby versions.
 
 Synopsis
 --------
 
-    good_robot
+    % good_robot
 
 or
 
-    good_robot <input-file> [ <input-file>, ... ]
+    % good_robot <input-file> [ <input-file>, ... ]
 
 Accepts commands (from stdin or named input files):
 
@@ -39,7 +41,7 @@ Accepts commands (from stdin or named input files):
     quit
     help
 
-Commands are case-insensitive. Robot names are case-sensitive.
+Commands are *case-insensitive*. Robot names are *case-sensitive*.
 
 Arguments (for "table" and "place") can be comma- or space-delimited.
 
