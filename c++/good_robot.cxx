@@ -1,4 +1,5 @@
 /*
+
 Toy robot game.
 
 Synopsis:
